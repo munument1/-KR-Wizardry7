@@ -1,0 +1,14 @@
+.secrets/
+downloads/
+build/
+node_modules/
+original/
+extracted/
+outputs/
+research/
+__pycache__/
+*.py[cod]
+*.log
+*.user
+*.suo
+.vs/

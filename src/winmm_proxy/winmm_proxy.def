@@ -1,0 +1,10 @@
+LIBRARY winmm
+EXPORTS
+    timeGetSystemTime
+    mciSendStringA
+    timeEndPeriod
+    timeBeginPeriod
+    timeGetTime
+    sndPlaySoundA
+    mciSendCommandA
+    mciGetErrorStringA
