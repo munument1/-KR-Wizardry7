@@ -30,6 +30,12 @@ try {
 }
 
 Get-Item -LiteralPath (Join-Path $outputDir "winmm.dll")
-Copy-Item -LiteralPath (Join-Path $workspace "downloads\galmuri7-8x8\font-007242d37349daf3.bin") `
-    -Destination (Join-Path $outputDir "wizardry7_ksx1001_8x8.bin") -Force
+$fontOutput = Join-Path $outputDir "wizardry7_ksx1001_8x8.bin"
+$galmuri7 = Join-Path $workspace "downloads\galmuri7-8x8\font-007242d37349daf3.bin"
+
+if (Test-Path -LiteralPath $galmuri7) {
+    Copy-Item -LiteralPath $galmuri7 -Destination $fontOutput -Force
+} else {
+    throw "Galmuri7 8x8 source not found under downloads"
+}
 Get-Item -LiteralPath (Join-Path $outputDir "wizardry7_ksx1001_8x8.bin")

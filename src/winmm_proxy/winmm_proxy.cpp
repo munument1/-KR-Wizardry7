@@ -22,6 +22,8 @@ constexpr unsigned char kHangulTrailFirst = 0xA0;
 constexpr int kHangulTrailCount = 96;
 constexpr int kHangulGlyphCount = 2350;
 constexpr int kDynamicGlyphSlot = 0x7F;
+constexpr uintptr_t kCursorYAddress = 0x004A8030;
+constexpr int kSmallFontVerticalOffset = -1;
 
 using DrawCharacterFn = void (__cdecl *)(int, int);
 DrawCharacterFn g_original_draw_character = nullptr;
@@ -213,7 +215,13 @@ void __cdecl DrawCharacterHook(int character, int font_index) {
       if (InstallGlyphInDynamicSlot(font_index, glyph_index)) {
         const LONG count = InterlockedIncrement(&g_rendered_hangul_count);
         if (count <= 20) WriteLog("Rendered Hangul glyph: index=%d font=%d", glyph_index, font_index);
+        auto* cursor_y = reinterpret_cast<short*>(kCursorYAddress);
+        const short saved_y = *cursor_y;
+        if (font_index == 0) {
+          *cursor_y = static_cast<short>(saved_y + kSmallFontVerticalOffset);
+        }
         g_original_draw_character(kDynamicGlyphSlot, font_index);
+        *cursor_y = saved_y;
         return;
       }
     }
