@@ -112,6 +112,7 @@ bool IsWizardProcess() {
   const char* name = std::strrchr(path, '\\');
   name = name ? name + 1 : path;
   return _stricmp(name, "WIZARD.EXE") == 0 ||
+         _stricmp(name, "WIZARD_720.EXE") == 0 ||
          _stricmp(name, "WIZARD_900.EXE") == 0;
 }
 

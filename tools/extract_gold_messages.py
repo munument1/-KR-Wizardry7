@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Extract Wizardry 7 Gold messages without modifying the game files.
+"""Extract Wizardry 7 DOS or Gold messages without modifying game files.
 
-MSG.HDR layout (little-endian):
-    u16 range_count
-    range_count * [u16 start_id, u16 bank_offset, u8 id_span, u16 bank]
-    optional all-zero 7-byte sentinel entries
+MSG.HDR layouts (little-endian):
+    Gold: u16 count + count * [u16 start_id, u16 offset, u8 span, u16 bank]
+    DOS:  u16 count + count * [u16 start_id, u16 offset, u8 span, u8 bank]
+    Both may end with all-zero sentinel entries of the matching size.
 
-MSG.GLD is split into logical 1024-byte banks. Each referenced message is a
+MSG.GLD/MSG.DBS is split into logical 1024-byte banks. Each message is a
 one-byte length followed by that many raw text bytes. Records may cross a bank
 boundary, so bounds checks are against the complete GLD file.
 """
@@ -25,7 +25,10 @@ from pathlib import Path
 
 
 BANK_SIZE = 1024
-HEADER_ENTRY = struct.Struct("<HHBH")
+HEADER_ENTRIES = {
+    "gold": struct.Struct("<HHBH"),
+    "dos": struct.Struct("<HHBB"),
+}
 
 
 @dataclass(frozen=True)
@@ -49,6 +52,8 @@ class MessageRecord:
     source_display: str
     raw_base64: str
     raw_hex: str
+    packed_base64: str = ""
+    packed_hex: str = ""
 
 
 def sha256(data: bytes) -> str:
@@ -71,12 +76,68 @@ def decode_source(raw: bytes) -> str:
     return raw.decode("latin-1")
 
 
-def parse_header(raw: bytes) -> tuple[int, list[RangeEntry], int]:
+def decode_huffman(payload: bytes, table_data: bytes) -> bytes:
+    """Decode one DOS MSG.DBS payload using the signed-int16 MISC.HDR tree."""
+    if not payload:
+        raise ValueError("Huffman payload is empty")
+    output_length = payload[0]
+    if output_length == 0:
+        return b""
+    table = struct.unpack_from(f"<{len(table_data) // 2}h", table_data)
+    output = bytearray()
+    node = 0
+    for packed in payload[1:]:
+        for shift in range(7, -1, -1):
+            bit = (packed >> shift) & 1
+            table_index = node * 2 + bit
+            if table_index >= len(table):
+                raise ValueError(f"Huffman node {node} is outside MISC.HDR")
+            value = table[table_index]
+            if value < 0:
+                node = -value
+            else:
+                output.append(value)
+                node = 0
+                if len(output) == output_length:
+                    return bytes(output)
+    raise ValueError(
+        f"Huffman payload ended after {len(output)} of {output_length} bytes"
+    )
+
+
+def detect_header_format(raw: bytes) -> str:
+    if len(raw) < 2:
+        raise ValueError("MSG.HDR is shorter than its 2-byte range count")
+    declared_count = struct.unpack_from("<H", raw, 0)[0]
+    matches: list[str] = []
+    for name, entry_struct in HEADER_ENTRIES.items():
+        required_size = 2 + declared_count * entry_struct.size
+        trailer = raw[required_size:]
+        if (
+            required_size <= len(raw)
+            and len(trailer) % entry_struct.size == 0
+            and not any(trailer)
+        ):
+            matches.append(name)
+    if len(matches) != 1:
+        raise ValueError(f"Could not uniquely detect MSG.HDR layout: {matches}")
+    return matches[0]
+
+
+def parse_header(
+    raw: bytes, header_format: str = "auto"
+) -> tuple[int, list[RangeEntry], int]:
     if len(raw) < 2:
         raise ValueError("MSG.HDR is shorter than its 2-byte range count")
 
+    if header_format == "auto":
+        header_format = detect_header_format(raw)
+    if header_format not in HEADER_ENTRIES:
+        raise ValueError(f"Unsupported MSG.HDR layout: {header_format}")
+    header_entry = HEADER_ENTRIES[header_format]
+
     declared_count = struct.unpack_from("<H", raw, 0)[0]
-    required_size = 2 + declared_count * HEADER_ENTRY.size
+    required_size = 2 + declared_count * header_entry.size
     if len(raw) < required_size:
         raise ValueError(
             f"MSG.HDR declares {declared_count} ranges but is only {len(raw)} bytes"
@@ -85,7 +146,7 @@ def parse_header(raw: bytes) -> tuple[int, list[RangeEntry], int]:
     entries: list[RangeEntry] = []
     cursor = 2
     for index in range(declared_count):
-        start_id, bank_offset, id_span, bank = HEADER_ENTRY.unpack_from(raw, cursor)
+        start_id, bank_offset, id_span, bank = header_entry.unpack_from(raw, cursor)
         entries.append(
             RangeEntry(
                 range_index=index,
@@ -95,20 +156,24 @@ def parse_header(raw: bytes) -> tuple[int, list[RangeEntry], int]:
                 bank=bank,
             )
         )
-        cursor += HEADER_ENTRY.size
+        cursor += header_entry.size
 
     trailer = raw[cursor:]
-    if len(trailer) % HEADER_ENTRY.size:
+    if len(trailer) % header_entry.size:
         raise ValueError(
             f"MSG.HDR has an unexpected {len(trailer)}-byte trailer"
         )
     if any(trailer):
         raise ValueError("MSG.HDR trailer contains non-zero data")
 
-    return declared_count, entries, len(trailer) // HEADER_ENTRY.size
+    return declared_count, entries, len(trailer) // header_entry.size
 
 
-def extract_messages(gld: bytes, entries: list[RangeEntry]) -> list[MessageRecord]:
+def extract_messages(
+    gld: bytes,
+    entries: list[RangeEntry],
+    huffman_table: bytes | None = None,
+) -> list[MessageRecord]:
     records: list[MessageRecord] = []
     bank_count = (len(gld) + BANK_SIZE - 1) // BANK_SIZE
 
@@ -138,7 +203,12 @@ def extract_messages(gld: bytes, entries: list[RangeEntry]) -> list[MessageRecor
                     f"message {message_id}: {record_length}-byte record exceeds MSG.GLD"
                 )
 
-            payload = gld[raw_start:raw_end]
+            packed_payload = gld[raw_start:raw_end]
+            payload = (
+                decode_huffman(packed_payload, huffman_table)
+                if huffman_table is not None
+                else packed_payload
+            )
             records.append(
                 MessageRecord(
                     range_index=entry.range_index,
@@ -151,6 +221,16 @@ def extract_messages(gld: bytes, entries: list[RangeEntry]) -> list[MessageRecor
                     source_display=display_bytes(payload),
                     raw_base64=base64.b64encode(payload).decode("ascii"),
                     raw_hex=payload.hex(" ").upper(),
+                    packed_base64=(
+                        base64.b64encode(packed_payload).decode("ascii")
+                        if huffman_table is not None
+                        else ""
+                    ),
+                    packed_hex=(
+                        packed_payload.hex(" ").upper()
+                        if huffman_table is not None
+                        else ""
+                    ),
                 )
             )
             cursor = raw_end
@@ -210,14 +290,34 @@ def write_csv(path: Path, records: list[MessageRecord]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hdr", type=Path, required=True, help="Path to MSG.HDR")
-    parser.add_argument("--gld", type=Path, required=True, help="Path to MSG.GLD")
+    parser.add_argument(
+        "--data", "--gld", dest="data", type=Path, required=True,
+        help="Path to MSG.GLD (Gold) or MSG.DBS (DOS)",
+    )
+    parser.add_argument(
+        "--format", choices=("auto", "gold", "dos"), default="auto",
+        help="MSG.HDR layout; default detects it from the file",
+    )
+    parser.add_argument(
+        "--misc", type=Path,
+        help="Path to DOS MISC.HDR Huffman tree (auto-detected beside MSG.HDR)",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 
     hdr = args.hdr.read_bytes()
-    gld = args.gld.read_bytes()
-    declared_count, entries, sentinel_count = parse_header(hdr)
-    records = extract_messages(gld, entries)
+    data = args.data.read_bytes()
+    detected_format = detect_header_format(hdr) if args.format == "auto" else args.format
+    declared_count, entries, sentinel_count = parse_header(hdr, detected_format)
+    misc_path = args.misc
+    if detected_format == "dos" and misc_path is None:
+        misc_path = args.hdr.with_name("MISC.HDR")
+    huffman_table = None
+    if detected_format == "dos":
+        if misc_path is None or not misc_path.is_file():
+            raise ValueError("DOS extraction requires MISC.HDR for Huffman decoding")
+        huffman_table = misc_path.read_bytes()
+    records = extract_messages(data, entries, huffman_table)
 
     duplicate_ids = sorted(
         message_id
@@ -225,15 +325,16 @@ def main() -> int:
         if count > 1
     )
     metadata = {
-        "format": "Wizardry 7 Gold MSG.HDR/MSG.GLD",
+        "format": f"Wizardry 7 {detected_format.upper()} MSG.HDR/{args.data.suffix[1:].upper()}",
+        "header_layout": detected_format,
         "header_file": args.hdr.name,
         "header_size": len(hdr),
         "header_sha256": sha256(hdr),
-        "data_file": args.gld.name,
-        "data_size": len(gld),
-        "data_sha256": sha256(gld),
+        "data_file": args.data.name,
+        "data_size": len(data),
+        "data_sha256": sha256(data),
         "bank_size": BANK_SIZE,
-        "bank_count": len(gld) // BANK_SIZE,
+        "bank_count": len(data) // BANK_SIZE,
         "declared_range_count": declared_count,
         "zero_sentinel_count": sentinel_count,
         "message_record_count": len(records),
@@ -241,6 +342,12 @@ def main() -> int:
         "duplicate_message_ids": duplicate_ids,
         "control_byte_notation": "Non-printable bytes are shown as <0xNN> in CSV source_text.",
     }
+    if huffman_table is not None and misc_path is not None:
+        metadata.update({
+            "compression": "Huffman",
+            "huffman_table_file": misc_path.name,
+            "huffman_table_sha256": sha256(huffman_table),
+        })
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     write_json(args.output_dir / "messages.json", records, metadata)

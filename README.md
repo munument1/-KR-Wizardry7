@@ -1,4 +1,4 @@
-# Wizardry 7 Gold Korean translation workspace
+# Wizardry 7 Korean translation workspace
 
 The local GOG installation is never committed. Original translation-related
 files are copied to the ignored `original/` directory before analysis or patch
@@ -6,6 +6,17 @@ experiments.
 
 ## Project status
 
+- The active target is now the DOS release in `DSAVANT`; the Gold prototype is
+  preserved as rendering research and a fallback.
+- DOS `MSG.DBS` Huffman decoding and the six-byte `MSG.HDR` range layout are
+  supported by the message extractor.
+- DOS and Gold share 11,016 messages byte-for-byte after decoding; only two
+  message boundaries differ, and DOS has one additional message.
+- DOS `SCENARIO.DBS` uses the same fixed-width item/monster layout as Gold, so
+  all 1,600 extracted scenario rows can be reused.
+- DOS translation CSV reinsertion now supports the original Huffman tree and a
+  reversible three-byte Korean character stream. The generated codebook is the
+  contract for the pending DOS renderer patch.
 - GOG Wizardry 7 Gold message and scenario string extraction is implemented.
 - Translation-ready CSV and workbook generation is implemented locally.
 - An x86 WinMM proxy renders two-byte KS X 1001 Hangul through the game's
@@ -15,7 +26,8 @@ experiments.
   measured as one glyph.
 - The proxy forwards `PlaySoundW` for the GOG launcher and installs fixed-address
   hooks only inside the actual Wizardry executable.
-- Next: message control-code/line-wrap validation and a CSV reinsertion tool.
+- Next: implement the DOS renderer-side codebook decoder and validate full-sheet
+  packed size, control codes, and line wrapping in DOSBox.
 
 This public repository intentionally excludes purchased game files, extracted
 game text, locally generated patches, API credentials, and build outputs. Supply
@@ -23,10 +35,21 @@ your own GOG installation when running the tools.
 
 ## Extract the main message database
 
+DOS (`MISC.HDR` is found automatically beside `MSG.HDR`):
+
+```powershell
+python tools\extract_gold_messages.py `
+  --hdr "D:\Wizardry 7\DSAVANT\MSG.HDR" `
+  --data "D:\Wizardry 7\DSAVANT\MSG.DBS" `
+  --output-dir outputs\dos_extracted\msg
+```
+
+Gold:
+
 ```powershell
 python tools\extract_gold_messages.py `
   --hdr original\MSG.HDR `
-  --gld original\MSG.GLD `
+  --data original\MSG.GLD `
   --output-dir extracted\msg
 ```
 
@@ -41,7 +64,27 @@ The CSV displays non-printable game control bytes as `<0xNN>`. Do not translate,
 delete, or reorder these markers. The JSON outputs retain the original payloads
 for later byte-perfect rebuild verification.
 
+## Rebuild the DOS message database
+
+Export the Google Sheet `Messages` tab as CSV, then run:
+
+```powershell
+python tools\build_dos_messages.py `
+  --hdr "D:\Wizardry 7\DSAVANT\MSG.HDR" `
+  --data "D:\Wizardry 7\DSAVANT\MSG.DBS" `
+  --misc "D:\Wizardry 7\DSAVANT\MISC.HDR" `
+  --translations messages_translated.csv `
+  --output-dir outputs\dos_patch\DSAVANT
+```
+
+The builder copies untranslated records without recompressing them, rejects
+source-text mismatches, Huffman-compresses applicable translations, and emits
+`MSG.HDR`, `MSG.DBS`, and `korean_codebook.json`. Do not install these files yet:
+the DOS executable still needs the matching renderer-side decoder.
+
 ## Extract item and monster names
+
+For DOS, pass `D:\Wizardry 7\DSAVANT\SCENARIO.DBS` to the same extractor.
 
 ```powershell
 python tools\extract_gold_scenario_strings.py `
