@@ -12,3 +12,5 @@ __pycache__/
 *.user
 *.suo
 .vs/
+translations/messages_ko.csv
+translations/scenario_ko.csv
