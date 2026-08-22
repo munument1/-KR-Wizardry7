@@ -1,0 +1,104 @@
+name: Build Korean runtime
+
+on:
+  push:
+    branches:
+      - korean-patch-v1
+    paths:
+      - src/winmm_proxy/**
+      - tools/build_ksx1001_font.py
+      - .github/workflows/build-korean-runtime.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC x86
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Build 32-bit winmm proxy
+        shell: cmd
+        run: |
+          if not exist build\runtime mkdir build\runtime
+          cl /nologo /std:c++17 /O2 /EHsc /LD /D_WINMM_ src\winmm_proxy\winmm_proxy.cpp /link /DEF:src\winmm_proxy\winmm_proxy.def /OUT:build\runtime\winmm.dll /MACHINE:X86
+
+      - name: Download Fusion Pixel 8px BDF
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '2026.07.20'
+          $name = "fusion-pixel-font-8px-monospaced-bdf-v$version.zip"
+          $url = "https://github.com/TakWolf/fusion-pixel-font/releases/download/$version/$name"
+          New-Item -ItemType Directory -Force build\font-source | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile "build\font-source\$name"
+          Expand-Archive -Path "build\font-source\$name" -DestinationPath build\font-source\fusion -Force
+
+          $bdf = Get-ChildItem build\font-source\fusion -Recurse -Filter 'fusion-pixel-8px-monospaced-ko.bdf' | Select-Object -First 1
+          if (-not $bdf) { throw 'Korean 8px monospaced BDF was not found in the Fusion Pixel release.' }
+          $bdf.FullName | Set-Content -Encoding ascii build\font-source\bdf-path.txt
+
+          $license = Get-ChildItem build\font-source\fusion -Recurse -Filter 'OFL.txt' | Select-Object -First 1
+          if (-not $license) { throw 'Fusion Pixel OFL license file was not found.' }
+          Copy-Item $license.FullName build\runtime\OFL-Fusion-Pixel-Font.txt
+
+      - name: Build KS X 1001 Hangul bitmap
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bdf = (Get-Content build\font-source\bdf-path.txt -Raw).Trim()
+          python tools\build_ksx1001_font.py $bdf build\runtime\wizardry7_ksx1001_8x8.bin
+
+      - name: Add runtime notice
+        shell: pwsh
+        run: |
+          @'
+          Wizardry 7 Korean runtime assets
+
+          winmm.dll
+            Project source: https://github.com/munument1/-KR-Wizardry7
+
+          wizardry7_ksx1001_8x8.bin
+            Derived from Fusion Pixel Font 8px monospaced Korean, release 2026.07.20.
+            Source: https://github.com/TakWolf/fusion-pixel-font
+            Font license: SIL Open Font License 1.1
+            See OFL-Fusion-Pixel-Font.txt in this directory.
+          '@ | Set-Content -Encoding utf8 build\runtime\THIRD_PARTY_NOTICES.txt
+
+      - name: Validate runtime binaries
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib
+          import struct
+
+          dll = Path('build/runtime/winmm.dll').read_bytes()
+          assert dll[:2] == b'MZ', 'winmm.dll is not a PE file'
+          pe = struct.unpack_from('<I', dll, 0x3C)[0]
+          assert dll[pe:pe + 4] == b'PE\0\0', 'invalid PE signature'
+          machine = struct.unpack_from('<H', dll, pe + 4)[0]
+          assert machine == 0x14C, f'expected x86 PE machine 0x14C, got 0x{machine:04X}'
+
+          font = Path('build/runtime/wizardry7_ksx1001_8x8.bin').read_bytes()
+          assert len(font) == 2350 * 8, f'font size mismatch: {len(font)}'
+          assert any(font), 'font payload is empty'
+
+          for path in ['build/runtime/winmm.dll', 'build/runtime/wizardry7_ksx1001_8x8.bin']:
+              data = Path(path).read_bytes()
+              print(f'{path}: bytes={len(data)} sha256={hashlib.sha256(data).hexdigest()}')
+
+      - name: Upload Korean runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: wizardry7-korean-runtime
+          path: build/runtime/*
+          if-no-files-found: error
+          retention-days: 30
