@@ -74,8 +74,11 @@ API의 KS X 1001 글꼴은 2,350자를 제공하므로 현재 번역에는 우�
 - `sndPlaySoundA`
 - `mciSendCommandA`
 - `mciGetErrorStringA`
+- `PlaySoundW` (`Launch.exe`가 요구하므로 런처 호환용으로 전달)
 
 원본 실행 파일은 ASLR 플래그가 없으므로 조사한 주소를 그대로 사용할 수 있지만, 안전을 위해 코드 바이트 서명을 먼저 확인한 뒤 후킹한다.
+
+GOG의 `Launch.exe`도 게임 폴더의 `winmm.dll`을 먼저 불러온다. 따라서 프록시는 런처에서 `PlaySoundW`를 시스템 WinMM으로 전달하되, 고정 주소 후크는 `WIZARD.EXE` 또는 `WIZARD_900.EXE` 프로세스에서만 설치한다.
 
 ### 3. 동적 예약 슬롯
 

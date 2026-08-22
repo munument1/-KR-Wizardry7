@@ -13,6 +13,8 @@ experiments.
 - An 8x8 `한` smoke test has been verified in the running game.
 - The game's basic string-width routine is hooked so a two-byte Hangul code is
   measured as one glyph.
+- The proxy forwards `PlaySoundW` for the GOG launcher and installs fixed-address
+  hooks only inside the actual Wizardry executable.
 - Next: message control-code/line-wrap validation and a CSV reinsertion tool.
 
 This public repository intentionally excludes purchased game files, extracted
