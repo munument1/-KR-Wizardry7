@@ -7,17 +7,63 @@ experiments.
 ## Project status
 
 - GOG Wizardry 7 Gold message and scenario string extraction is implemented.
-- Translation-ready CSV and workbook generation is implemented locally.
+- The Korean translation workbook is complete and imported as a source-verified payload.
+- A CSV/XLSX reinsertion pipeline validates control bytes, KS X 1001 coverage,
+  message lengths, Scenario slot sizes, and original-record CRCs.
 - An x86 WinMM proxy renders two-byte KS X 1001 Hangul through the game's
   original VBFONT renderer.
 - An 8x8 `한` smoke test has been verified in the running game.
 - The game's basic string-width routine is hooked so a two-byte Hangul code is
   measured as one glyph.
-- Next: message control-code/line-wrap validation and a CSV reinsertion tool.
+- Remaining runtime QA: long-message wrapping/control-code paths and broad UI testing.
 
 This public repository intentionally excludes purchased game files, extracted
-game text, locally generated patches, API credentials, and build outputs. Supply
-your own GOG installation when running the tools.
+English game text, API credentials, and build outputs. The committed Korean
+payload contains stable record identifiers, source CRC32 values, and translations
+only. Supply your own GOG installation when running the tools.
+
+## Korean patch builder
+
+The finished workbook is packed as `translations/wizardry7_ko_payload.zip` with
+an external verification manifest at `translations/manifest.json`.
+
+```powershell
+python tools\build_korean_patch.py --original-dir original
+```
+
+The builder validates each original record by CRC32, rebuilds `MSG.HDR`/`MSG.GLD`,
+patches the 16-byte item/monster name slots in `SCENARIO.GLD`, and creates the
+verified 8x8 `VBFONT0.VGA` container. It never modifies `original/`.
+
+To include the runtime needed for actual Hangul rendering, build the existing x86
+WinMM proxy and provide the verified 2,350-glyph font binary:
+
+```powershell
+python tools\build_korean_patch.py `
+  --original-dir original `
+  --winmm build\winmm_proxy\winmm.dll `
+  --hangul-font path\to\wizardry7_ksx1001_8x8.bin
+```
+
+When both runtime files are included, `patch_manifest.json` reports
+`"ready_to_install": true`. See `docs/korean_patch_build.md` for the full flow.
+
+## Import an updated translation workbook
+
+Export the Google Sheet as `.xlsx`, then run:
+
+```powershell
+python tools\import_translation_xlsx.py Wizardry7_translation.xlsx --output-dir translations
+```
+
+The importer checks:
+
+- every non-empty source row has a translation;
+- `<0xNN>` control-byte order is unchanged;
+- `$ ^ % @ # * /` counts are preserved;
+- every Hangul syllable exists in the KS X 1001 2,350-glyph set;
+- each encoded message is at most 255 bytes;
+- every Scenario name fits its 16-byte slot.
 
 ## Extract the main message database
 
@@ -49,15 +95,14 @@ python tools\extract_gold_scenario_strings.py `
 
 The scenario translation CSV contains 600 item-name slots and four 16-byte name
 variants for each of 250 monsters. Empty slots are retained so record indices and
-binary offsets stay stable. Korean insertion will require a custom game encoding;
-the 16-byte capacity refers to encoded bytes, not Unicode character count.
+binary offsets stay stable. The 16-byte capacity refers to encoded bytes, not
+Unicode character count.
 
 ## Korean rendering prototype
 
-The x86 WinMM proxy now renders an API-supplied KS X 1001 Hangul glyph in the
-running GOG Gold game. It uses a two-byte game encoding and dynamically replaces
-one reserved glyph in the active VBFONT before calling the game's original draw
-routine.
+The x86 WinMM proxy renders KS X 1001 Hangul in the running GOG Gold game. It
+uses a custom two-byte game encoding and dynamically replaces one reserved glyph
+in the active VBFONT before calling the game's original draw routine.
 
 Build the proxy from a Visual Studio developer environment:
 
@@ -65,14 +110,12 @@ Build the proxy from a Visual Studio developer environment:
 powershell -ExecutionPolicy Bypass -File tools\build_winmm_proxy.ps1
 ```
 
-Build the current smoke-test assets:
+The original smoke-test tools remain available:
 
 ```powershell
 node tools\make_vbfont0_8x8.mjs
 node tools\make_hangul_smoke_patch.mjs
 ```
 
-Generated files are written below `outputs/`. The smoke patch replaces `HUMAN`
-and the main-menu `CREATE` label with `한`; it is test data, not a translation
-release. See `docs/korean_rendering_plan.md` for the verified addresses, encoding,
-current limitations, and next implementation steps.
+See `docs/korean_rendering_plan.md` for the verified addresses, encoding, current
+limitations, and runtime implementation details.
