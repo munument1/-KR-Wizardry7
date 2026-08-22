@@ -1,0 +1,31 @@
+{
+  "format": "Wizardry 7 Gold Korean translation payload v1",
+  "source_workbook_sha256": "A15BDA8C73BDD48A265A15F377DCDA533CA6797AFE72E2934669857559BA8A8B",
+  "messages": {
+    "rows": 11018,
+    "translated_nonempty": 10186,
+    "max_encoded_bytes": 86,
+    "normalization_changes": [
+      {
+        "message_id": "19860",
+        "from": "퉷",
+        "to": "퉤"
+      },
+      {
+        "message_id": "23757",
+        "from": "×",
+        "to": "x"
+      }
+    ]
+  },
+  "scenario": {
+    "rows": 1600,
+    "translated_nonempty": 1568,
+    "max_encoded_bytes": 16
+  },
+  "encoding": {
+    "hangul": "KS X 1001 2350 glyphs mapped to custom lead 0x80-0x98 / trail 0xA0-0xFF",
+    "control_tokens": "<0xNN> is emitted as the literal byte NN"
+  },
+  "payload_zip_sha256": "B9234D27EE73F901B03C6427464D526839DC8968BE0168E278E56F3BC34CEA4E"
+}
