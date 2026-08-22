@@ -8,6 +8,13 @@ on:
       - src/winmm_proxy/**
       - tools/build_ksx1001_font.py
       - .github/workflows/build-korean-runtime.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - src/winmm_proxy/**
+      - tools/build_ksx1001_font.py
+      - .github/workflows/build-korean-runtime.yml
   workflow_dispatch:
 
 permissions:
