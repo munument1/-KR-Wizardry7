@@ -77,10 +77,30 @@ python tools\build_dos_messages.py `
   --output-dir outputs\dos_patch\DSAVANT
 ```
 
-The builder copies untranslated records without recompressing them, rejects
-source-text mismatches, Huffman-compresses applicable translations, and emits
-`MSG.HDR`, `MSG.DBS`, and `korean_codebook.json`. Do not install these files yet:
+The builder rejects source-text mismatches, Huffman-compresses applicable
+translations, and emits `MISC.HDR`, `MSG.HDR`, `MSG.DBS`, and
+`korean_codebook.json`.  It packs each complete `MSG.HDR` range inside one
+`0x400`-byte bank (inserting unreferenced padding between ranges) because the
+DOS subindex walker cannot cross a bank while scanning preceding records.
+The build report must show `record_start_crossings: 0` and `used_bank_count <= 256`.
+Do not install these files yet:
 the DOS executable still needs the matching renderer-side decoder.
+
+To repair an existing translated DOS message layer while preserving its
+Huffman payloads byte-for-byte, use:
+
+```powershell
+python tools\repack_dos_message_banks.py `
+  --hdr translated\MSG.HDR `
+  --data translated\MSG.DBS `
+  --misc translated\MISC.HDR `
+  --output-dir outputs\dos_patch\repacked
+```
+
+The command writes a new six-byte `MSG.HDR`, a padded 256 KiB `MSG.DBS`, the
+unchanged `MISC.HDR`, and `REPACK_REPORT.json`. It refuses a range larger than
+one 0x400-byte bank, because representing that case requires splitting the
+entry table rather than silently producing unsafe data.
 
 ## Extract item and monster names
 
