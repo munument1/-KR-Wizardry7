@@ -1,0 +1,58 @@
+name: Build DOS v19 resident renderer
+
+on:
+  push:
+    branches:
+      - fix/gog-launcher-playsoundw
+    paths:
+      - src/dos_v19/**
+      - .github/workflows/build-dos-v19-resident.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble resident renderer
+        run: |
+          mkdir -p artifacts
+          as --32 -o artifacts/resident.o \
+            --defsym INV_TABLE_OFFSET=0x0D00 \
+            --defsym GLYPH_TABLE_OFFSET=0x0E00 \
+            --defsym ALPHABET_LEN=121 \
+            --defsym CUSTOM_COUNT=1110 \
+            src/dos_v19/fontresident.S
+          ld -m elf_i386 -Ttext 0x0910 -e resident_char \
+            -o artifacts/resident.elf artifacts/resident.o
+          objcopy -O binary -j .text artifacts/resident.elf artifacts/resident.bin
+          test "$(stat -c %s artifacts/resident.bin)" -le 1008
+          nm -n artifacts/resident.elf | grep -E '00000910 .* resident_char$'
+          nm -n artifacts/resident.elf | grep -E '00000937 .* resident_string$'
+          nm -n artifacts/resident.elf | grep -E '00000a30 .* resident_width$'
+      - name: Assemble root trampolines
+        run: |
+          as --32 -o artifacts/char.o --defsym RES_OFF=0x0910 src/dos_v19/char_stub.S
+          ld -m elf_i386 -Ttext 0x3877 -e stub -o artifacts/char.elf artifacts/char.o
+          objcopy -O binary -j .text artifacts/char.elf artifacts/char.bin
+          test "$(stat -c %s artifacts/char.bin)" -le 30
+
+          as --32 -o artifacts/string.o --defsym RES_OFF=0x0937 src/dos_v19/string_stub.S
+          ld -m elf_i386 -Ttext 0x3895 -e stub -o artifacts/string.elf artifacts/string.o
+          objcopy -O binary -j .text artifacts/string.elf artifacts/string.bin
+          test "$(stat -c %s artifacts/string.bin)" -le 53
+
+          as --32 -o artifacts/width.o --defsym RES_OFF=0x0A30 src/dos_v19/width_stub.S
+          ld -m elf_i386 -Ttext 0x38CA -e stub -o artifacts/width.elf artifacts/width.o
+          objcopy -O binary -j .text artifacts/width.elf artifacts/width.bin
+          test "$(stat -c %s artifacts/width.bin)" -le 87
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dos-v19-resident-renderer
+          path: |
+            artifacts/*.bin
+            artifacts/*.elf
+          if-no-files-found: error
