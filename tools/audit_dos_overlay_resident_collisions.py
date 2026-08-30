@@ -5,8 +5,8 @@ OVR files are loaded at root-CS runtime origin 0x5047. A helper placed at or
 above that origin is not resident merely because the original DS.EXE bytes are
 zero there: any sufficiently large overlay can overwrite it. This audit uses
 the pristine purchased archive as the authority for overlay lengths and reports
-exact overlaps for the known v20/v21/v37 helper locations plus the v38 UI
-relocations.
+exact overlaps for the historical v20/v21/v37 helper locations and the safe
+v38/v39 root relocations.
 """
 
 from __future__ import annotations
@@ -39,6 +39,12 @@ from build_dos_v38_resident_ui_helpers import (
     compact_stat_repaint_bytes,
     relocated_width_adapter_bytes,
 )
+from build_dos_v39_overlay_safe_resident import (
+    ROOT_STAT_REPAINT,
+    ROOT_TRAILING_ADAPTER,
+    ROOT_WIDTH_ADAPTER,
+    root_helper_block,
+)
 
 
 def overlaps(start: int, size: int, overlay_size: int) -> int:
@@ -52,6 +58,7 @@ def main() -> int:
     parser.add_argument("--original-zip", type=Path, required=True)
     args = parser.parse_args()
 
+    v39_block = root_helper_block()
     helpers = {
         "v20_width_adapter": (WIDTH_ADAPTER, len(width_adapter_bytes())),
         "v21_stat_repaint": (STAT_REPAINT_HELPER, len(stat_repaint_helper_bytes())),
@@ -64,6 +71,16 @@ def main() -> int:
         "v38_stat_repaint": (
             NEW_STAT_REPAINT_HELPER,
             len(compact_stat_repaint_bytes()),
+        ),
+        "v39_root_block": (ROOT_WIDTH_ADAPTER, len(v39_block)),
+        "v39_width_entry": (ROOT_WIDTH_ADAPTER, ROOT_TRAILING_ADAPTER - ROOT_WIDTH_ADAPTER),
+        "v39_trailing_entry": (
+            ROOT_TRAILING_ADAPTER,
+            ROOT_STAT_REPAINT - ROOT_TRAILING_ADAPTER,
+        ),
+        "v39_stat_repaint": (
+            ROOT_STAT_REPAINT,
+            ROOT_WIDTH_ADAPTER + len(v39_block) - ROOT_STAT_REPAINT,
         ),
     }
 
@@ -117,6 +134,7 @@ def main() -> int:
             "v20 0xF790 and v21 0xF7B0 are fully overwritten by VMAZE and VMNPC",
             "v37 0xFDB0 and 0xFDF0 are fully overwritten by VMNPC",
             "v38 0x38F4 and 0x3906 are below the 0x5047 overlay origin",
+            "v39's complete 44-byte root helper block is below 0x5047; scene parsing itself lives in the separate resident font segment",
         ],
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
