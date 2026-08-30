@@ -2,19 +2,19 @@
 """Build a one-shot VGA.DRV diagnostic for the v37 save failure.
 
 The stock VGA driver aborts at runtime 0x2357 when its picture-memory cursor
-would reach/exceed 0x4180.  At that point the loader still has the failed
+would reach/exceed 0x4180. At that point the loader still has the failed
 picture slot, the 32-bit payload length read from the PIC header, and the
 post-allocation pool cursor in memory.
 
-This probe changes only the fatal path.  Instead of the stock message it prints
+This probe changes only the fatal path. Instead of the stock message it prints
 
     PICFAIL S=ssss SZ=zzzzzzzz P=pppp
 
-in hexadecimal and exits exactly as the stock fatal path does.  S is the
+in hexadecimal and exits exactly as the stock fatal path does. S is the
 picture slot, SZ is the first little-endian dword in the PIC file (the payload
 length; file size is SZ+4), and P is the post-allocation paragraph cursor.
 
-Purchased binaries are never written to the repository.  Supply a local stock
+Purchased binaries are never written to the repository. Supply a local stock
 GOG VGA.DRV and install the generated file only for the diagnostic run.
 """
 
@@ -37,21 +37,20 @@ FATAL_BRANCH_EXPECTED = bytes.fromhex("E9 94 00")
 FATAL_BRANCH_PATCHED = bytes.fromhex("E9 52 00")  # -> runtime 0x23AC
 
 # Runtime 0x23AC..0x2427 is the two stock fatal printers + their strings.
-# The replacement is assembled at VMA 0x23AC from the documented source in
-# docs/VGA_PICTURE_FAIL_PROBE_2026-08-30.md.  It is 118 bytes; the remaining
-# six bytes are padded with NOPs so the driver size stays unchanged.
+# The replacement is assembled at VMA 0x23AC. It is 123 bytes, uses only
+# 8086-compatible instructions, and leaves one byte for NOP padding.
 DIAG_RUNTIME = 0x23AC
 DIAG_FILE = DIAG_RUNTIME - COM_ORIGIN
 DIAG_REGION_SIZE = 0x2428 - DIAG_RUNTIME
 DIAG_BYTES = bytes.fromhex(
-    "8C C8 8E D8 BF 08 24 31 C0 8A 46 0E E8 25 00 BF "
-    "10 24 8B 46 FA E8 1C 00 8B 46 FC E8 16 00 BF 1B "
-    "24 2E A1 AC 0C E8 0C 00 BA FC 23 B4 09 CD 21 B8 "
-    "01 4C CD 21 B9 04 00 C1 C0 04 88 C2 80 E2 0F 80 "
-    "FA 09 76 03 80 C2 07 80 C2 30 88 15 47 E2 E8 C3 "
-    "0D 0A 50 49 43 46 41 49 4C 20 53 3D 30 30 30 30 "
-    "20 53 5A 3D 30 30 30 30 30 30 30 30 20 50 3D 30 "
-    "30 30 30 0D 0A 24"
+    "8C C8 8E D8 BF 0D 24 31 C0 8A 46 0E E8 25 00 BF "
+    "15 24 8B 46 FA E8 1C 00 8B 46 FC E8 16 00 BF 20 "
+    "24 2E A1 AC 0C E8 0C 00 BA 01 24 B4 09 CD 21 B8 "
+    "01 4C CD 21 B9 04 00 D1 C0 D1 C0 D1 C0 D1 C0 88 "
+    "C2 80 E2 0F 80 FA 09 76 03 80 C2 07 80 C2 30 88 "
+    "15 47 E2 E3 C3 0D 0A 50 49 43 46 41 49 4C 20 53 "
+    "3D 30 30 30 30 20 53 5A 3D 30 30 30 30 30 30 30 "
+    "30 20 50 3D 30 30 30 30 0D 0A 24"
 )
 
 STOCK_DIAG_REGION_PREFIX = bytes.fromhex(
@@ -69,9 +68,7 @@ def patch_vga(data: bytes) -> bytes:
         raise ValueError(f"unexpected VGA.DRV size {len(data)}")
     if data[FATAL_BRANCH_FILE : FATAL_BRANCH_FILE + 3] != FATAL_BRANCH_EXPECTED:
         raise ValueError("VGA.DRV fatal branch bytes do not match the stock driver")
-    if not data[DIAG_FILE : DIAG_FILE + len(STOCK_DIAG_REGION_PREFIX)].startswith(
-        STOCK_DIAG_REGION_PREFIX
-    ):
+    if data[DIAG_FILE : DIAG_FILE + len(STOCK_DIAG_REGION_PREFIX)] != STOCK_DIAG_REGION_PREFIX:
         raise ValueError("VGA.DRV fatal diagnostic region does not match the stock driver")
     if len(DIAG_BYTES) > DIAG_REGION_SIZE:
         raise AssertionError("diagnostic code exceeds the stock fatal region")
