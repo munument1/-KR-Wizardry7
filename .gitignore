@@ -9,6 +9,9 @@ research/
 __pycache__/
 *.py[cod]
 *.log
+stderr.txt
+stdout.txt
+tools/dosbox_save*.conf
 *.user
 *.suo
 .vs/
