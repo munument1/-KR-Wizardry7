@@ -1,0 +1,27 @@
+name: Test VGA picture failure probe
+
+on:
+  push:
+    branches: [fix/gog-launcher-playsoundw]
+    paths:
+      - "tools/build_dos_vga_picture_fail_probe.py"
+      - "tools/match_dos_pic_failure.py"
+      - "tests/test_vga_picture_fail_probe.py"
+      - ".github/workflows/test-vga-picture-fail-probe.yml"
+  pull_request:
+    paths:
+      - "tools/build_dos_vga_picture_fail_probe.py"
+      - "tools/match_dos_pic_failure.py"
+      - "tests/test_vga_picture_fail_probe.py"
+      - ".github/workflows/test-vga-picture-fail-probe.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run picture-failure probe tests
+        run: python -m unittest tests.test_vga_picture_fail_probe -v
