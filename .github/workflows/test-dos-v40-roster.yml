@@ -1,0 +1,59 @@
+name: Test DOS v40 roster decoder
+
+on:
+  push:
+    branches:
+      - main
+      - fix/roster-korean-abbrev
+    paths:
+      - "src/dos_v40/**"
+      - "tools/build_dos_v40_roster_abbrev.py"
+      - "tests/test_build_dos_v40_roster_abbrev.py"
+      - ".github/workflows/test-dos-v40-roster.yml"
+  pull_request:
+    paths:
+      - "src/dos_v40/**"
+      - "tools/build_dos_v40_roster_abbrev.py"
+      - "tests/test_build_dos_v40_roster_abbrev.py"
+      - ".github/workflows/test-dos-v40-roster.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify GNU binutils
+        run: |
+          as --version
+          ld --version
+          objcopy --version
+      - name: Run v40 roster tests
+        run: python -m unittest tests.test_build_dos_v40_roster_abbrev -v
+      - name: Download published v0.39 package
+        run: |
+          mkdir -p outputs/v39_release
+          curl -L --fail --retry 3 \
+            -o outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.39/Wizardry7_Korean_0.39_overlay_safe_resident.zip
+          echo "27daa79c4f812d098ed98ae5ba8d7b089525211f7f0efaf5fa92cfd2cb3acc49  outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip" | sha256sum -c -
+          unzip -q outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip -d outputs/v39_release
+      - name: Build v40 from exact v0.39 payload
+        run: |
+          python tools/build_dos_v40_roster_abbrev.py \
+            --v39-dir outputs/v39_release \
+            --output-dir outputs/v40_roster \
+            --zip-output outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
+          unzip -t outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
+          sha256sum outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
+      - name: Upload v40 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wizardry7_Korean_0.40_roster_abbrev_fix
+          path: |
+            outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
+            outputs/v40_roster/UI_V40_REPORT.json
+          if-no-files-found: error
+          retention-days: 3
