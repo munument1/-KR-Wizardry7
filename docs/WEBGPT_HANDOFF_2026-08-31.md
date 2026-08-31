@@ -12,12 +12,13 @@
 원본 압축:   D:\Wizardry 7.zip
 GitHub:      https://github.com/munument1/-KR-Wizardry7
 브랜치:      fix/gog-launcher-playsoundw
-릴리스 태그: v39-overlay-safe
+릴리스 버전: 0.39
+릴리스 태그: v0.39
 ```
 
 ## 1. 최종 상태
 
-현재 소스 릴리스는 **v39**이다. 다음 경로가 실제 DOSBox에서 확인됐다.
+현재 공개 소스 릴리스는 **0.39**이며 내부 구현 빌드 번호는 `v39`이다. 다음 경로가 실제 DOSBox에서 확인됐다.
 
 - 한글 애니메이션 타이틀 표시
 - 알레테이데스 오프닝과 첫 행성 이벤트 대사 진행
@@ -26,7 +27,7 @@ GitHub:      https://github.com/munument1/-KR-Wizardry7
 - `저장 & 종료` 실행 후 메인 메뉴 복귀
 - 방금 기록한 저장 파일 재불러오기
 
-v37까지 남아 있던 저장 종료 문제는 v39에서 해결됐다.
+v37까지 남아 있던 저장 종료 문제는 0.39(내부 빌드 v39)에서 해결됐다.
 
 ## 2. 저장 오류의 확정 원인
 
@@ -53,11 +54,11 @@ Windows 매핑: D:\Wizardry 7\DSAVANT
 | v19 한글 렌더러 | 저장 성공 |
 | v20 UI 폭/정렬 패치 | 저장 창 직전 실패 |
 | v37 | 동일 실패 |
-| v39 오버레이 안전 구조 | 저장·종료·재불러오기 성공 |
+| 0.39 오버레이 안전 구조 | 저장·종료·재불러오기 성공 |
 
 따라서 단순 폰트 크기나 저장 버퍼 초과가 원인이 아니었다. v20이 추가한 폭 계산 어댑터 `0xF790`과 v21의 능력치 재도색 헬퍼 `0xF7B0`가 `VMAZE.OVR`의 런타임 범위 `[0x5047, 0xFDAF)` 안에 있었다. 본게임 진입 후 오버레이가 헬퍼를 덮어썼고, 저장 대화상자가 손상된 폭 계산 코드를 호출하면서 그림 메모리 오류가 발생했다.
 
-## 3. v39 수정
+## 3. 0.39 수정(내부 빌드 v39)
 
 관련 소스:
 
@@ -92,14 +93,14 @@ tools/prepare_dos_save_matrix.py
 초기 SHA-256: 869DAC6F6ECB1B37BCBF48A395B45B5C4438E7BE8BEF7758EDC4E1ECB67CA3EE
 ```
 
-v39 `저장 & 계속` 후:
+0.39 `저장 & 계속` 후:
 
 ```text
 SHA-256: 69FCD5529CC0AB9387AA0A240F8938CADB474FB5830CE9209E0BE4171E24EED2
 결과: 본게임 복귀 성공
 ```
 
-v39 `저장 & 종료` 후:
+0.39 `저장 & 종료` 후:
 
 ```text
 SHA-256: 1BA0DA218684C237E2F7BE9E813BE7295BA99E1F478C50E0009A4F331357DA98
@@ -113,7 +114,7 @@ SHA-256: 1BA0DA218684C237E2F7BE9E813BE7295BA99E1F478C50E0009A4F331357DA98
 로컬 산출물:
 
 ```text
-D:\Codex_Trans\Wizardry 7\outputs\Wizardry7_Korean_v39_overlay_safe_resident.zip
+D:\Codex_Trans\Wizardry 7\outputs\Wizardry7_Korean_0.39_overlay_safe_resident.zip
 SHA-256: 27DAA79C4F812D098ED98AE5BA8D7B089525211F7F0EFAF5FA92CFD2CB3ACC49
 ```
 
@@ -135,7 +136,7 @@ issue_count: 0
 record_count: 11019
 ```
 
-주요 v39 해시:
+주요 0.39 해시:
 
 ```text
 DS.EXE      54FA02F1E91B3086F2F8283FCBED07D21DA8A86285BE72C08806F23833B2D112
@@ -150,7 +151,7 @@ VTREA.OVR   C34C993B93DBA7A8A106C1A9339FF47A54028B2E77E617F3CF615EE07A5F0F26
 
 ## 6. 라이브 설치와 복구
 
-v39의 19개 런타임 파일을 `D:\Wizardry 7\DSAVANT`에 설치했고 빌드 산출물과 해시가 모두 일치한다.
+0.39의 19개 런타임 파일을 `D:\Wizardry 7\DSAVANT`에 설치했고 빌드 산출물과 해시가 모두 일치한다.
 
 설치 전 v37 백업:
 
@@ -164,7 +165,7 @@ D:\Wizardry 7\CODEX_BACKUP_BEFORE_V39_OVERLAY_SAFE_20260831_122430
 
 - Git에는 빌더, 감사기, 테스트, 문서만 커밋한다.
 - `D:\Wizardry 7.zip`, `DS.EXE`, OVR, DB, PIC, VGA, 생성된 패치 ZIP은 커밋하거나 릴리스 자산으로 올리지 않는다.
-- GitHub 릴리스 `v39-overlay-safe`는 소스 태그와 변경 설명만 제공한다.
+- GitHub 릴리스 `v0.39`는 소스 태그와 변경 설명만 제공한다.
 - 바이너리 패치는 예상 원본 바이트와 해시를 검증하고 파일 크기를 유지한다.
 
 ## 8. 후속 작업 시 주의점
@@ -179,4 +180,4 @@ D:\Wizardry 7\CODEX_BACKUP_BEFORE_V39_OVERLAY_SAFE_20260831_122430
 
 ## 9. 한 줄 인수인계
 
-v39는 v20부터 저장 화면을 깨뜨리던 폭 계산 헬퍼뿐 아니라 장면 파서 헬퍼까지 모두 오버레이 창 밖의 resident 위치로 옮겼고, 저장·계속·종료·재불러오기까지 실제 DOSBox에서 성공했다. 이후 작업은 `fix/gog-launcher-playsoundw`의 `v39-overlay-safe` 태그에서 시작하면 된다.
+0.39(내부 빌드 v39)는 v20부터 저장 화면을 깨뜨리던 폭 계산 헬퍼뿐 아니라 장면 파서 헬퍼까지 모두 오버레이 창 밖의 resident 위치로 옮겼고, 저장·계속·종료·재불러오기까지 실제 DOSBox에서 성공했다. 이후 작업은 `fix/gog-launcher-playsoundw`의 `v0.39` 태그에서 시작하면 된다.

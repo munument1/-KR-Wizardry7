@@ -8,11 +8,11 @@ experiments.
 
 - The active target is now the DOS release in `DSAVANT`; the Gold prototype is
   preserved as rendering research and a fallback.
-- The current source release is **v39**. Korean menus, the animated Korean
+- The current public source release is **0.39** (internal build 39). Korean menus, the animated Korean
   title, the Aletheides opening, the first planetary event, save-and-resume,
   save-and-quit, and reload of the newly written save have been runtime-verified.
 - The v20-v37 save failure was caused by persistent helpers at `0xF790` and
-  `0xF7B0` being overwritten by loaded overlays. v39 moves every root helper
+  `0xF7B0` being overwritten by loaded overlays. Release 0.39 moves every root helper
   below overlay origin `0x5047` and moves scene parsing into the resident font
   segment before its `0x0D00` inverse table.
 - DOS `MSG.DBS` Huffman decoding and the six-byte `MSG.HDR` range layout are
@@ -41,15 +41,16 @@ This public repository intentionally excludes purchased game files, extracted
 game text, locally generated patches, API credentials, and build outputs. Supply
 your own GOG installation when running the tools.
 
-## Build the current v39 overlay-safe package
+## Build the current 0.39 overlay-safe package
 
-After reproducing the v37 payload locally, build v39 with:
+After reproducing the v37 payload locally, build public release 0.39 with the
+internal v39 builder:
 
 ```powershell
 python tools\build_dos_v39_overlay_safe_resident.py `
   --v37-dir outputs\v37_fixed_scene_helpers_final `
-  --output-dir outputs\v39_overlay_safe_resident_final `
-  --zip-output outputs\Wizardry7_Korean_v39_overlay_safe_resident.zip
+  --output-dir outputs\0.39_overlay_safe_resident_final `
+  --zip-output outputs\Wizardry7_Korean_0.39_overlay_safe_resident.zip
 ```
 
 The generated package contains patched commercial-game payloads and therefore

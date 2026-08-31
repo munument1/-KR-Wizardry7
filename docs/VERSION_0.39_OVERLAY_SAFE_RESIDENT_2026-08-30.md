@@ -1,4 +1,7 @@
-# Wizardry VII DOS Korean v39 — overlay-safe resident architecture
+# Wizardry VII DOS Korean 0.39 — overlay-safe resident architecture
+
+Public release version: **0.39**. The `v39` names used by source files, tools,
+tests, and this document's implementation notes mean internal build 39.
 
 Date: 2026-08-30
 
@@ -109,8 +112,8 @@ git pull
 
 python tools\build_dos_v39_overlay_safe_resident.py `
   --v37-dir "D:\Wizardry 7\DSAVANT" `
-  --output-dir "outputs\v39_overlay_safe_resident" `
-  --zip-output "outputs\Wizardry7_Korean_v39_overlay_safe_resident.zip"
+  --output-dir "outputs\0.39_overlay_safe_resident" `
+  --zip-output "outputs\Wizardry7_Korean_0.39_overlay_safe_resident.zip"
 ```
 
 Optional structural audit against the pristine purchased archive:
