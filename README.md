@@ -1,157 +1,113 @@
-# 위저드리 7 DOS 한글화
+# 위저드리 7 DOS 한글화 패치
 
-GOG판 **Wizardry VII: Crusaders of the Dark Savant** DOS 버전을 한글화하는
-프로젝트입니다. 현재 공개 버전은 **0.39**이며, 소스 내부의 `v39` 표기는
-내부 빌드 39를 뜻합니다.
+**Wizardry VII: Crusaders of the Dark Savant** GOG DOS판을 위한 한글화
+패치입니다. 현재 배포 버전은 **0.39**입니다.
 
-## 0.39 주요 내용
+> 이 패치는 **GOG에 포함된 DOS판**용입니다. Wizardry 7 Gold에는 적용하지
+> 마십시오.
+
+## 다운로드
+
+### [위저드리 7 DOS 한글화 0.39 받기](https://github.com/munument1/-KR-Wizardry7/releases/download/v0.39/Wizardry7_Korean_0.39_overlay_safe_resident.zip)
+
+- [릴리스 설명 보기](https://github.com/munument1/-KR-Wizardry7/releases/tag/v0.39)
+- 파일명: `Wizardry7_Korean_0.39_overlay_safe_resident.zip`
+- SHA-256: `27DAA79C4F812D098ED98AE5BA8D7B089525211F7F0EFAF5FA92CFD2CB3ACC49`
+
+## 설치 방법
+
+1. 위 ZIP 파일을 내려받습니다.
+2. 기존 위저드리 7 설치 폴더를 통째로 백업합니다.
+3. ZIP을 풉니다.
+4. 압축 안의 `DSAVANT` 폴더를 GOG 위저드리 7 설치 폴더에 복사합니다.
+5. 같은 이름의 파일을 모두 **덮어쓰기** 합니다.
+6. GOG 바로가기 또는 기존 DOSBox 실행 파일로 게임을 시작합니다.
+
+일반적인 설치 구조는 다음과 같습니다.
+
+```text
+Wizardry 7\
+├─ DOSBOX\
+├─ DSAVANT\        ← 이 폴더에 덮어쓰기
+├─ dosboxWizardry7.conf
+└─ Launch Wizardry 7 (DOS Version).lnk
+```
+
+## 제거 및 복구
+
+별도 제거 프로그램은 없습니다. 설치 전에 백업한 원본 `DSAVANT` 폴더를 다시
+덮어쓰면 복구됩니다. 백업이 없다면 GOG에서 게임을 다시 설치한 뒤 저장 파일만
+복원하십시오.
+
+저장 파일은 일반적으로 다음 위치에 있습니다.
+
+```text
+게임 설치 폴더\DSAVANT\SAVEGAME.DBS
+```
+
+DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상입니다.
+
+## 0.39에서 확인된 내용
 
 - 한글 메뉴와 캐릭터 생성 화면
 - 한글 애니메이션 타이틀 로고
-- 알레테이데스 오프닝과 첫 행성 이벤트 대사
-- 2바이트 한글 글리프 렌더링과 한글 폭 계산
-- 직업명과 UI 문구의 한글 경계 처리
-- `저장 & 계속`, `저장 & 종료`, 새 저장 파일 재불러오기 정상화
-- 가장 긴 `VMNPC.OVR`까지 포함한 오버레이 충돌 검사 통과
-- 전체 81개 자동 테스트 통과
+- 알레테이데스 오프닝과 첫 행성 이벤트
+- 직업명과 주요 UI 문구
+- 2바이트 한글 글리프 표시와 글자 폭 계산
+- `저장 & 계속`
+- `저장 & 종료`
+- 새로 기록한 저장 파일 재불러오기
 
-## 다운로드 및 설치
+저장 관련 기능은 실제 DOSBox에서 기존 저장 불러오기 → 저장 및 계속 → 저장 및
+종료 → 방금 기록한 파일 재불러오기 순서로 검증했습니다.
 
-1. [GitHub 릴리스 v0.39](https://github.com/munument1/-KR-Wizardry7/releases/tag/v0.39)에서
-   `Wizardry7_Korean_0.39_overlay_safe_resident.zip`을 받습니다.
-2. 기존 위저드리 7 설치 폴더를 먼저 백업합니다.
-3. ZIP을 풀어 나온 `DSAVANT` 폴더를 GOG 위저드리 7 설치 폴더에 복사합니다.
-4. 같은 이름의 파일을 모두 **덮어쓰기** 합니다.
-5. 평소처럼 GOG 실행기 또는 DOSBox 설정 파일로 게임을 실행합니다.
+## 설치 전 알아둘 점
 
-일반적인 설치 위치의 예는 다음과 같습니다.
+- 반드시 보유 중인 GOG DOS판을 먼저 설치해야 합니다.
+- 다른 실행 파일 패치나 한글 패치가 적용된 상태에서는 충돌할 수 있습니다.
+- 기존 저장 파일은 보존되지만 설치 전 별도 백업을 권장합니다.
+- 게임 전체의 모든 선택지와 지역을 사람이 끝까지 검수한 완성판은 아닙니다.
+- 번역 누락, 문장 오류, 글자 겹침을 발견하면 화면과 발생 위치를 함께 제보해
+  주십시오.
 
-```text
-C:\GOG Games\Wizardry 7\DSAVANT
-```
+## 문제가 생길 때
 
-다른 판본이나 이미 별도 패치가 적용된 파일에서는 정상 동작을 보장하지 않습니다.
-문제가 생기면 백업한 `DSAVANT` 폴더로 복원하십시오.
+### 실행 직후 종료되는 경우
 
-## 저장 오류 수정 내용
+- Gold판이 아닌 GOG DOS판에 적용했는지 확인합니다.
+- 다른 패치를 제거하고 깨끗하게 재설치한 게임에 다시 적용합니다.
+- GOG 설치 폴더 경로와 DOSBox 설정 파일이 원래 상태인지 확인합니다.
 
-v20부터 v37까지 남아 있던 저장 실패의 원인은 저장 버퍼 초과가 아니었습니다.
-폭 계산과 능력치 재도색을 담당하던 영구 헬퍼가 `0xF790`, `0xF7B0`에 있었고,
-본게임 오버레이가 이 위치를 덮어쓴 뒤 저장 화면이 손상된 코드를 호출하면서
-`Memory unavailable loading picture.` 오류가 발생했습니다.
+### 저장 파일이 보이지 않는 경우
 
-0.39에서는 다음과 같이 영구 코드를 오버레이 범위 밖으로 옮겼습니다.
+- `DSAVANT` 폴더 안에 `SAVEGAME.DBS`가 있는지 확인합니다.
+- 게임의 저장 화면에서 `C:\DSAVANT\`가 표시되는 것은 정상입니다.
+- 다른 위저드리 7 설치본을 실행하고 있지 않은지 확인합니다.
 
-- 공용 폭 계산 어댑터: root CS `0x38F4`
-- 장면 후행 ASCII 어댑터: root CS `0x38F8`
-- 능력치 재도색 헬퍼: root CS `0x390C`
-- 장면 검색·후행 문자 디스패처: resident `VBFONT0.VGA`의 `0x0AF0..0x0B6C`
+### 원래 상태로 되돌리고 싶은 경우
 
-`DS.EXE`, `VBFONT0.VGA`, 모든 OVR 파일의 크기는 유지됩니다. 실제 DOSBox에서
-기존 저장 파일 불러오기, `저장 & 계속`, `저장 & 종료`, 방금 기록한 저장 파일의
-재불러오기까지 확인했습니다.
+백업한 `DSAVANT` 폴더를 복원하거나 GOG에서 게임을 재설치하십시오.
 
-## 소스에서 0.39 빌드
+## 오류 제보
 
-로컬에서 v37 산출물을 준비한 뒤 내부 v39 빌더를 실행합니다.
+[GitHub Issues](https://github.com/munument1/-KR-Wizardry7/issues)에 다음 정보를
+적어 주시면 확인에 도움이 됩니다.
 
-```powershell
-python tools\build_dos_v39_overlay_safe_resident.py `
-  --v37-dir outputs\v37_fixed_scene_helpers_final `
-  --output-dir outputs\0.39_overlay_safe_resident_final `
-  --zip-output outputs\Wizardry7_Korean_0.39_overlay_safe_resident.zip
-```
+- 오류가 발생한 화면의 스크린샷
+- 오류 직전 선택한 메뉴나 행동
+- 새 게임인지 기존 저장 파일인지 여부
+- 사용한 패치 버전
 
-전체 회귀 테스트:
+## 개발 자료
 
-```powershell
-python -m unittest discover -s tests -v
-```
+패치를 사용하는 데 아래 문서를 읽을 필요는 없습니다. 번역이나 실행 파일 패치
+개발을 이어갈 때만 참고하십시오.
 
-오버레이 충돌 검사:
+- [`docs/WEBGPT_HANDOFF_2026-08-31.md`](docs/WEBGPT_HANDOFF_2026-08-31.md)
+- [`docs/VERSION_0.39_OVERLAY_SAFE_RESIDENT_2026-08-30.md`](docs/VERSION_0.39_OVERLAY_SAFE_RESIDENT_2026-08-30.md)
+- [`docs/korean_rendering_plan.md`](docs/korean_rendering_plan.md)
 
-```powershell
-python tools\audit_dos_overlay_resident_collisions.py
-```
+## 면책
 
-## DOS 메시지 추출
-
-`MISC.HDR`는 `MSG.HDR` 옆에서 자동으로 찾습니다.
-
-```powershell
-python tools\extract_gold_messages.py `
-  --hdr "D:\Wizardry 7\DSAVANT\MSG.HDR" `
-  --data "D:\Wizardry 7\DSAVANT\MSG.DBS" `
-  --output-dir outputs\dos_extracted\msg
-```
-
-생성되는 주요 파일:
-
-- `messages_for_translation.csv`: UTF-8 BOM 번역 표
-- `messages.json`: 전체 레코드와 무손실 Base64/16진수 데이터
-- `messages.jsonl`: 레코드별 기계 판독 데이터
-- `extraction_report.json`: 원본 해시와 구조 검증 결과
-
-CSV에 표시되는 `<0xNN>`은 게임 제어 바이트입니다. 번역하거나 삭제하거나 순서를
-바꾸면 안 됩니다.
-
-## DOS 메시지 재구성
-
-Google Sheets의 `Messages` 탭을 CSV로 내보낸 뒤 실행합니다.
-
-```powershell
-python tools\build_dos_messages.py `
-  --hdr "D:\Wizardry 7\DSAVANT\MSG.HDR" `
-  --data "D:\Wizardry 7\DSAVANT\MSG.DBS" `
-  --misc "D:\Wizardry 7\DSAVANT\MISC.HDR" `
-  --translations messages_translated.csv `
-  --output-dir outputs\dos_patch\DSAVANT
-```
-
-빌더는 원문 불일치 여부를 검사하고, 번역문을 허프만 압축한 뒤 `MISC.HDR`,
-`MSG.HDR`, `MSG.DBS`, `korean_codebook.json`을 생성합니다. DOS 서브인덱스가
-레코드를 읽을 때 `0x400`바이트 뱅크 경계를 넘지 않도록 각 `MSG.HDR` 범위를
-하나의 뱅크 안에 배치합니다. 빌드 보고서에서 다음 조건을 만족해야 합니다.
-
-```text
-record_start_crossings: 0
-used_bank_count <= 256
-```
-
-기존 한글 메시지 계층의 허프만 데이터를 유지하면서 뱅크 배치만 복구하려면 다음
-도구를 사용합니다.
-
-```powershell
-python tools\repack_dos_message_banks.py `
-  --hdr translated\MSG.HDR `
-  --data translated\MSG.DBS `
-  --misc translated\MISC.HDR `
-  --output-dir outputs\dos_patch\repacked
-```
-
-## 아이템·몬스터 이름 추출
-
-DOS판에서는 `D:\Wizardry 7\DSAVANT\SCENARIO.DBS`를 입력 파일로 사용합니다.
-
-```powershell
-python tools\extract_gold_scenario_strings.py `
-  --scenario original\SCENARIO.GLD `
-  --output-dir extracted\scenario
-```
-
-번역 CSV에는 아이템 이름 600칸과 몬스터 250종의 16바이트 이름 변형 네 개가
-포함됩니다. 빈 슬롯도 레코드 인덱스와 바이너리 오프셋을 유지하기 위해 보존합니다.
-16바이트 제한은 유니코드 글자 수가 아니라 게임 인코딩 바이트 수입니다.
-
-## 관련 문서
-
-- [`docs/WEBGPT_HANDOFF_2026-08-31.md`](docs/WEBGPT_HANDOFF_2026-08-31.md): 최종 상태와 런타임 검증
-- [`docs/VERSION_0.39_OVERLAY_SAFE_RESIDENT_2026-08-30.md`](docs/VERSION_0.39_OVERLAY_SAFE_RESIDENT_2026-08-30.md): 0.39 resident 구조
-- [`docs/korean_rendering_plan.md`](docs/korean_rendering_plan.md): 한글 렌더링 구조와 구현 기록
-
-## 주의 사항
-
-- 원본 GOG 설치본은 별도로 보관하십시오.
-- 다른 번역·실행 파일 패치와 함께 사용할 때는 충돌할 수 있습니다.
-- 새 오버레이나 resident 헬퍼를 추가할 때는 반드시 실제 런타임 주소 충돌을 검사하십시오.
-- 오버레이 길이를 임의로 늘리면 오프닝이나 이벤트 진행이 깨질 수 있습니다.
+Wizardry 및 관련 상표·게임 데이터의 권리는 각 권리자에게 있습니다. 이 저장소는
+비공식 팬 번역 프로젝트이며 원 제작사나 GOG와 관련이 없습니다.
