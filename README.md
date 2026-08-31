@@ -8,15 +8,22 @@ experiments.
 
 - The active target is now the DOS release in `DSAVANT`; the Gold prototype is
   preserved as rendering research and a fallback.
+- The current source release is **v39**. Korean menus, the animated Korean
+  title, the Aletheides opening, the first planetary event, save-and-resume,
+  save-and-quit, and reload of the newly written save have been runtime-verified.
+- The v20-v37 save failure was caused by persistent helpers at `0xF790` and
+  `0xF7B0` being overwritten by loaded overlays. v39 moves every root helper
+  below overlay origin `0x5047` and moves scene parsing into the resident font
+  segment before its `0x0D00` inverse table.
 - DOS `MSG.DBS` Huffman decoding and the six-byte `MSG.HDR` range layout are
   supported by the message extractor.
 - DOS and Gold share 11,016 messages byte-for-byte after decoding; only two
   message boundaries differ, and DOS has one additional message.
 - DOS `SCENARIO.DBS` uses the same fixed-width item/monster layout as Gold, so
   all 1,600 extracted scenario rows can be reused.
-- DOS translation CSV reinsertion now supports the original Huffman tree and a
-  reversible three-byte Korean character stream. The generated codebook is the
-  contract for the pending DOS renderer patch.
+- DOS translation CSV reinsertion supports the original Huffman tree and a
+  reversible three-byte Korean character stream. The generated codebook and
+  renderer patch are kept synchronized by guarded builders and tests.
 - GOG Wizardry 7 Gold message and scenario string extraction is implemented.
 - Translation-ready CSV and workbook generation is implemented locally.
 - An x86 WinMM proxy renders two-byte KS X 1001 Hangul through the game's
@@ -26,12 +33,32 @@ experiments.
   measured as one glyph.
 - The proxy forwards `PlaySoundW` for the GOG launcher and installs fixed-address
   hooks only inside the actual Wizardry executable.
-- Next: implement the DOS renderer-side codebook decoder and validate full-sheet
-  packed size, control codes, and line wrapping in DOSBox.
+- All executable and overlay changes are fixed-size and hash/byte guarded. The
+  purchased game archive, patched game binaries, generated ZIPs, and extracted
+  text remain local and are intentionally excluded from Git.
 
 This public repository intentionally excludes purchased game files, extracted
 game text, locally generated patches, API credentials, and build outputs. Supply
 your own GOG installation when running the tools.
+
+## Build the current v39 overlay-safe package
+
+After reproducing the v37 payload locally, build v39 with:
+
+```powershell
+python tools\build_dos_v39_overlay_safe_resident.py `
+  --v37-dir outputs\v37_fixed_scene_helpers_final `
+  --output-dir outputs\v39_overlay_safe_resident_final `
+  --zip-output outputs\Wizardry7_Korean_v39_overlay_safe_resident.zip
+```
+
+The generated package contains patched commercial-game payloads and therefore
+must remain local. GitHub releases publish the source toolchain and release
+notes only. Run the full regression suite with:
+
+```powershell
+python -m unittest discover -s tests -v
+```
 
 ## Extract the main message database
 

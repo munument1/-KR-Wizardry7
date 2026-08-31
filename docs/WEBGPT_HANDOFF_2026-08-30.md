@@ -1,5 +1,8 @@
 # Wizardry VII DOS Korean localization — WebGPT handoff
 
+> Superseded by `docs/WEBGPT_HANDOFF_2026-08-31.md`, which records the v38
+> save fix, final runtime verification, and release state.
+
 Date: 2026-08-30 (Asia/Seoul)
 
 ## 0. Request and trust boundary
