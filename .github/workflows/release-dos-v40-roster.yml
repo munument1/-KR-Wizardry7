@@ -1,0 +1,85 @@
+name: Release DOS v0.40 roster fix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/dos_v40/**"
+      - "tools/build_dos_v40_roster_abbrev.py"
+      - "tests/test_build_dos_v40_roster_abbrev.py"
+      - ".github/workflows/release-dos-v40-roster.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run v40 static tests
+        run: python -m unittest tests.test_build_dos_v40_roster_abbrev -v
+      - name: Download exact published v0.39 base
+        run: |
+          mkdir -p outputs/v39_release
+          curl -L --fail --retry 3 \
+            -o outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.39/Wizardry7_Korean_0.39_overlay_safe_resident.zip
+          echo "27daa79c4f812d098ed98ae5ba8d7b089525211f7f0efaf5fa92cfd2cb3acc49  outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip" | sha256sum -c -
+          unzip -q outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip -d outputs/v39_release
+      - name: Build v0.40 package
+        run: |
+          python tools/build_dos_v40_roster_abbrev.py \
+            --v39-dir outputs/v39_release \
+            --output-dir outputs/v40_roster \
+            --zip-output outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
+          unzip -t outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
+          sha256sum outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip | tee outputs/V40_SHA256.txt
+      - name: Publish v0.40
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > outputs/V40_RELEASE_NOTES.md <<'EOF'
+          ## 위저드리 7 DOS 한글화 0.40
+
+          캐릭터 메뉴의 **캐릭터 추가(Add Character) 목록에서 종족/직업 약어가 `?`, `$` 같은 기호로 깨지던 문제**를 수정했습니다.
+
+          ### 원인
+
+          DOS판은 이 목록의 종족/직업 약어를 앞 3바이트만 단일 문자 렌더러로 출력합니다. 한글 한 글자는 `0x17 + pair + pair`의 3바이트이므로, 0.39에서는 이 세 바이트가 각각 별도 문자로 처리되어 깨진 기호로 보였습니다.
+
+          ### 수정
+
+          - 단일 문자 렌더러에 한글 3바이트 스트림 결합 처리를 추가
+          - `ESC + pair + pair` 3회 호출을 한글 글리프 1회 출력으로 변환
+          - ASCII 단일문자 출력은 기존 동작 유지
+          - 0.39의 저장/오버레이 안전 수정 그대로 유지
+          - `DS.EXE`, OVR, 메시지 DB, 저장 형식은 변경하지 않음
+          - `VBFONT0.VGA` 파일 크기 유지
+
+          ### 설치
+
+          기존 게임 폴더를 백업한 뒤 ZIP 안의 `DSAVANT` 폴더를 GOG 위저드리 7 설치 폴더에 덮어씁니다.
+
+          빌드는 공개 0.39 ZIP의 SHA-256을 검증한 뒤 그 정확한 파일을 기준으로 생성됩니다.
+          EOF
+
+          if gh release view v0.40 >/dev/null 2>&1; then
+            gh release edit v0.40 \
+              --title "위저드리 7 DOS 한글화 0.40" \
+              --notes-file outputs/V40_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA"
+            gh release upload v0.40 \
+              outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip \
+              --clobber
+          else
+            gh release create v0.40 \
+              outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip \
+              --title "위저드리 7 DOS 한글화 0.40" \
+              --notes-file outputs/V40_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA"
+          fi
