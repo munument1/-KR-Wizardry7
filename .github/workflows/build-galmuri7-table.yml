@@ -1,0 +1,35 @@
+name: Build Galmuri7 bitmap table
+
+on:
+  push:
+    branches:
+      - fix/gog-launcher-playsoundw
+    paths:
+      - tools/build_galmuri7_bitmap_table.py
+      - .github/workflows/build-galmuri7-table.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download official Galmuri7 bitmap source
+        run: |
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/quiple/galmuri/main/src/Galmuri7.kbitx \
+            --output Galmuri7.kbitx
+      - name: Build 7x7 Hangul table
+        run: |
+          python tools/build_galmuri7_bitmap_table.py \
+            --input Galmuri7.kbitx \
+            --output artifacts/galmuri7_hangul_7x7.bin \
+            --metadata artifacts/galmuri7_hangul_7x7.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: galmuri7-hangul-7x7
+          path: artifacts/
+          if-no-files-found: error

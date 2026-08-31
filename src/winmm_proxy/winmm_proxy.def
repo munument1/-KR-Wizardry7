@@ -6,5 +6,6 @@ EXPORTS
     timeBeginPeriod
     timeGetTime
     sndPlaySoundA
+    PlaySoundW
     mciSendCommandA
     mciGetErrorStringA

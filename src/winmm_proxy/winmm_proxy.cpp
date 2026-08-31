@@ -22,6 +22,8 @@ constexpr unsigned char kHangulTrailFirst = 0xA0;
 constexpr int kHangulTrailCount = 96;
 constexpr int kHangulGlyphCount = 2350;
 constexpr int kDynamicGlyphSlot = 0x7F;
+constexpr uintptr_t kCursorYAddress = 0x004A8030;
+constexpr int kSmallFontVerticalOffset = -1;
 
 using DrawCharacterFn = void (__cdecl *)(int, int);
 DrawCharacterFn g_original_draw_character = nullptr;
@@ -40,6 +42,7 @@ using TimeEndPeriodFn = MMRESULT (WINAPI *)(UINT);
 using TimeBeginPeriodFn = MMRESULT (WINAPI *)(UINT);
 using TimeGetTimeFn = DWORD (WINAPI *)();
 using SndPlaySoundAFn = BOOL (WINAPI *)(LPCSTR, UINT);
+using PlaySoundWFn = BOOL (WINAPI *)(LPCWSTR, HMODULE, DWORD);
 using MciSendCommandAFn = MCIERROR (WINAPI *)(MCIDEVICEID, UINT, DWORD_PTR, DWORD_PTR);
 using MciGetErrorStringAFn = BOOL (WINAPI *)(MCIERROR, LPSTR, UINT);
 
@@ -49,6 +52,7 @@ TimeEndPeriodFn p_timeEndPeriod = nullptr;
 TimeBeginPeriodFn p_timeBeginPeriod = nullptr;
 TimeGetTimeFn p_timeGetTime = nullptr;
 SndPlaySoundAFn p_sndPlaySoundA = nullptr;
+PlaySoundWFn p_PlaySoundW = nullptr;
 MciSendCommandAFn p_mciSendCommandA = nullptr;
 MciGetErrorStringAFn p_mciGetErrorStringA = nullptr;
 
@@ -96,9 +100,20 @@ bool LoadRealWinmm() {
   ok &= Resolve(p_timeBeginPeriod, "timeBeginPeriod");
   ok &= Resolve(p_timeGetTime, "timeGetTime");
   ok &= Resolve(p_sndPlaySoundA, "sndPlaySoundA");
+  ok &= Resolve(p_PlaySoundW, "PlaySoundW");
   ok &= Resolve(p_mciSendCommandA, "mciSendCommandA");
   ok &= Resolve(p_mciGetErrorStringA, "mciGetErrorStringA");
   return ok;
+}
+
+bool IsWizardProcess() {
+  char path[MAX_PATH] = {};
+  if (!GetModuleFileNameA(nullptr, path, MAX_PATH)) return false;
+  const char* name = std::strrchr(path, '\\');
+  name = name ? name + 1 : path;
+  return _stricmp(name, "WIZARD.EXE") == 0 ||
+         _stricmp(name, "WIZARD_720.EXE") == 0 ||
+         _stricmp(name, "WIZARD_900.EXE") == 0;
 }
 
 void InitializeLogPath(HMODULE module) {
@@ -201,7 +216,13 @@ void __cdecl DrawCharacterHook(int character, int font_index) {
       if (InstallGlyphInDynamicSlot(font_index, glyph_index)) {
         const LONG count = InterlockedIncrement(&g_rendered_hangul_count);
         if (count <= 20) WriteLog("Rendered Hangul glyph: index=%d font=%d", glyph_index, font_index);
+        auto* cursor_y = reinterpret_cast<short*>(kCursorYAddress);
+        const short saved_y = *cursor_y;
+        if (font_index == 0) {
+          *cursor_y = static_cast<short>(saved_y + kSmallFontVerticalOffset);
+        }
         g_original_draw_character(kDynamicGlyphSlot, font_index);
+        *cursor_y = saved_y;
         return;
       }
     }
@@ -342,6 +363,10 @@ __declspec(dllexport) BOOL WINAPI sndPlaySoundA(LPCSTR sound, UINT flags) {
   return p_sndPlaySoundA ? p_sndPlaySoundA(sound, flags) : FALSE;
 }
 
+__declspec(dllexport) BOOL WINAPI PlaySoundW(LPCWSTR sound, HMODULE module, DWORD flags) {
+  return p_PlaySoundW ? p_PlaySoundW(sound, module, flags) : FALSE;
+}
+
 __declspec(dllexport) MCIERROR WINAPI mciSendCommandA(MCIDEVICEID device, UINT message, DWORD_PTR flags, DWORD_PTR parameters) {
   return p_mciSendCommandA ? p_mciSendCommandA(device, message, flags, parameters) : MCIERR_HARDWARE;
 }
@@ -356,9 +381,13 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
     InitializeLogPath(instance);
     const bool loaded = LoadRealWinmm();
     WriteLog("Wizardry 7 Korean proxy loaded: real_winmm=%p resolved=%s", g_real_winmm, loaded ? "yes" : "no");
-    g_hangul_font_loaded = LoadHangulFont();
-    InstallDrawHook();
-    InstallMeasureHook();
+    if (IsWizardProcess()) {
+      g_hangul_font_loaded = LoadHangulFont();
+      InstallDrawHook();
+      InstallMeasureHook();
+    } else {
+      WriteLog("Forwarding-only mode for non-game process");
+    }
   } else if (reason == DLL_PROCESS_DETACH) {
     WriteLog("Wizardry 7 Korean proxy unloaded");
     if (g_real_winmm) FreeLibrary(g_real_winmm);

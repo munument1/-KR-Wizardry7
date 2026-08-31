@@ -1,0 +1,68 @@
+name: Test DOS v39 resident helpers
+
+on:
+  push:
+    branches:
+      - fix/gog-launcher-playsoundw
+    paths:
+      - src/dos_v39/**
+      - tools/build_dos_v39_overlay_safe_resident.py
+      - tools/audit_dos_overlay_resident_collisions.py
+      - tests/test_build_dos_v39_overlay_safe_resident.py
+      - .github/workflows/test-dos-v39-resident.yml
+  pull_request:
+    paths:
+      - src/dos_v39/**
+      - tools/build_dos_v39_overlay_safe_resident.py
+      - tools/audit_dos_overlay_resident_collisions.py
+      - tests/test_build_dos_v39_overlay_safe_resident.py
+      - .github/workflows/test-dos-v39-resident.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python dependency
+        run: python -m pip install pillow
+
+      - name: Assemble v39 font dispatcher
+        run: |
+          mkdir -p artifacts/v39
+          as --32 -o artifacts/v39/font_dispatch.o src/dos_v39/font_dispatch.S
+          ld -m elf_i386 -Ttext 0x0AF0 -e dispatch \
+            -o artifacts/v39/font_dispatch.elf artifacts/v39/font_dispatch.o
+          objcopy -O binary -j .text \
+            artifacts/v39/font_dispatch.elf artifacts/v39/font_dispatch.bin
+          test "$(stat -c %s artifacts/v39/font_dispatch.bin)" -eq 124
+
+      - name: Assemble v39 root helpers
+        run: |
+          as --32 -o artifacts/v39/root_helpers.o src/dos_v39/root_helpers.S
+          ld -m elf_i386 -Ttext 0x38F4 -e width_entry \
+            -o artifacts/v39/root_helpers.elf artifacts/v39/root_helpers.o
+          objcopy -O binary -j .text \
+            artifacts/v39/root_helpers.elf artifacts/v39/root_helpers.bin
+          test "$(stat -c %s artifacts/v39/root_helpers.bin)" -eq 44
+
+      - name: Compare assembled bytes with builder constants
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, 'tools')
+          from build_dos_v39_overlay_safe_resident import (
+              FONT_DISPATCHER_BYTES,
+              root_helper_block,
+          )
+          assert Path('artifacts/v39/font_dispatch.bin').read_bytes() == FONT_DISPATCHER_BYTES
+          assert Path('artifacts/v39/root_helpers.bin').read_bytes() == root_helper_block()
+          PY
+
+      - name: Run v39 unit tests
+        run: python -m unittest tests.test_build_dos_v39_overlay_safe_resident

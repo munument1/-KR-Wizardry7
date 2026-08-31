@@ -1,61 +1,113 @@
-# Wizardry 7 Gold 한국어화 작업 공간
+# 위저드리 7 DOS 한글화 패치
 
-로컬 GOG 설치 파일은 이 저장소에 절대 커밋하지 않습니다. 분석이나 패치 실험을 시작하기 전에 원본 번역 관련 파일을 Git에서 무시되는 `original/` 디렉터리에 복사합니다.
+**Wizardry VII: Crusaders of the Dark Savant** GOG DOS판을 위한 한글화
+패치입니다. 현재 배포 버전은 **0.39**입니다.
 
-## 프로젝트 상태
+> 이 패치는 **GOG에 포함된 DOS판**용입니다. Wizardry 7 Gold에는 적용하지
+> 마십시오.
 
-- GOG Wizardry 7 Gold의 메시지 및 시나리오 문자열 추출 기능을 구현했습니다.
-- 번역용 CSV 및 워크북 생성 기능을 로컬에서 구현했습니다.
-- x86 WinMM 프록시를 통해 게임의 기존 VBFONT 렌더러로 2바이트 KS X 1001 한글을 출력할 수 있습니다.
-- 실행 중인 게임에서 8x8 `한` 스모크 테스트를 확인했습니다.
-- 게임의 기본 문자열 폭 계산 루틴을 후킹하여 2바이트 한글 코드를 하나의 글리프로 계산하도록 했습니다.
-- 다음 작업: 메시지 제어 코드/줄바꿈 검증 및 CSV 재삽입 도구 구현.
+## 다운로드
 
-이 공개 저장소에는 구매한 게임 파일, 추출된 게임 텍스트, 로컬에서 생성한 패치, API 인증 정보 및 빌드 결과물을 의도적으로 포함하지 않습니다. 도구를 실행하려면 본인이 소유한 GOG 설치본을 준비해야 합니다.
+### [위저드리 7 DOS 한글화 0.39 받기](https://github.com/munument1/-KR-Wizardry7/releases/download/v0.39/Wizardry7_Korean_0.39_overlay_safe_resident.zip)
 
-## 메인 메시지 데이터베이스 추출
+- [릴리스 설명 보기](https://github.com/munument1/-KR-Wizardry7/releases/tag/v0.39)
+- 파일명: `Wizardry7_Korean_0.39_overlay_safe_resident.zip`
+- SHA-256: `27DAA79C4F812D098ED98AE5BA8D7B089525211F7F0EFAF5FA92CFD2CB3ACC49`
 
-```powershell
-python tools\extract_gold_messages.py `
-  --hdr original\MSG.HDR `
-  --gld original\MSG.GLD `
-  --output-dir extracted\msg
+## 설치 방법
+
+1. 위 ZIP 파일을 내려받습니다.
+2. 기존 위저드리 7 설치 폴더를 통째로 백업합니다.
+3. ZIP을 풉니다.
+4. 압축 안의 `DSAVANT` 폴더를 GOG 위저드리 7 설치 폴더에 복사합니다.
+5. 같은 이름의 파일을 모두 **덮어쓰기** 합니다.
+6. GOG 바로가기 또는 기존 DOSBox 실행 파일로 게임을 시작합니다.
+
+일반적인 설치 구조는 다음과 같습니다.
+
+```text
+Wizardry 7\
+├─ DOSBOX\
+├─ DSAVANT\        ← 이 폴더에 덮어쓰기
+├─ dosboxWizardry7.conf
+└─ Launch Wizardry 7 (DOS Version).lnk
 ```
 
-출력 파일:
+## 제거 및 복구
 
-- `messages_for_translation.csv`: UTF-8 BOM 형식의 스프레드시트용 번역 테이블.
-- `messages.json`: 메타데이터와 전체 레코드, 무손실 Base64/16진수 페이로드.
-- `messages.jsonl`: 한 줄에 하나의 기계 판독용 레코드.
-- `extraction_report.json`: 원본 해시와 구조 검증 결과 수치.
+별도 제거 프로그램은 없습니다. 설치 전에 백업한 원본 `DSAVANT` 폴더를 다시
+덮어쓰면 복구됩니다. 백업이 없다면 GOG에서 게임을 다시 설치한 뒤 저장 파일만
+복원하십시오.
 
-CSV에서는 출력할 수 없는 게임 제어 바이트를 `<0xNN>` 형식으로 표시합니다. 이 마커는 번역하거나 삭제하거나 순서를 바꾸면 안 됩니다. JSON 출력에는 이후 바이트 단위로 완전히 동일한 재구성을 검증할 수 있도록 원본 페이로드가 그대로 보존됩니다.
+저장 파일은 일반적으로 다음 위치에 있습니다.
 
-## 아이템 및 몬스터 이름 추출
-
-```powershell
-python tools\extract_gold_scenario_strings.py `
-  --scenario original\SCENARIO.GLD `
-  --output-dir extracted\scenario
+```text
+게임 설치 폴더\DSAVANT\SAVEGAME.DBS
 ```
 
-시나리오 번역 CSV에는 아이템 이름 슬롯 600개와 몬스터 250종 각각에 대한 16바이트 이름 변형 4개가 포함됩니다. 레코드 인덱스와 바이너리 오프셋을 안정적으로 유지하기 위해 빈 슬롯도 그대로 보존합니다. 한국어를 삽입하려면 게임용 사용자 정의 인코딩이 필요하며, 16바이트 제한은 유니코드 문자 수가 아니라 인코딩된 바이트 수를 의미합니다.
+DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상입니다.
 
-## 한글 렌더링 프로토타입
+## 0.39에서 확인된 내용
 
-x86 WinMM 프록시는 현재 실행 중인 GOG Gold 게임에서 API로 전달한 KS X 1001 한글 글리프를 렌더링할 수 있습니다. 2바이트 게임 인코딩을 사용하며, 게임의 기존 그리기 루틴을 호출하기 전에 활성 VBFONT 안의 예약 글리프 하나를 동적으로 교체하는 방식입니다.
+- 한글 메뉴와 캐릭터 생성 화면
+- 한글 애니메이션 타이틀 로고
+- 알레테이데스 오프닝과 첫 행성 이벤트
+- 직업명과 주요 UI 문구
+- 2바이트 한글 글리프 표시와 글자 폭 계산
+- `저장 & 계속`
+- `저장 & 종료`
+- 새로 기록한 저장 파일 재불러오기
 
-Visual Studio 개발자 환경에서 다음 명령으로 프록시를 빌드합니다:
+저장 관련 기능은 실제 DOSBox에서 기존 저장 불러오기 → 저장 및 계속 → 저장 및
+종료 → 방금 기록한 파일 재불러오기 순서로 검증했습니다.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\build_winmm_proxy.ps1
-```
+## 설치 전 알아둘 점
 
-현재 스모크 테스트용 자산은 다음 명령으로 빌드합니다:
+- 반드시 보유 중인 GOG DOS판을 먼저 설치해야 합니다.
+- 다른 실행 파일 패치나 한글 패치가 적용된 상태에서는 충돌할 수 있습니다.
+- 기존 저장 파일은 보존되지만 설치 전 별도 백업을 권장합니다.
+- 게임 전체의 모든 선택지와 지역을 사람이 끝까지 검수한 완성판은 아닙니다.
+- 번역 누락, 문장 오류, 글자 겹침을 발견하면 화면과 발생 위치를 함께 제보해
+  주십시오.
 
-```powershell
-node tools\make_vbfont0_8x8.mjs
-node tools\make_hangul_smoke_patch.mjs
-```
+## 문제가 생길 때
 
-생성된 파일은 `outputs/` 아래에 저장됩니다. 스모크 패치는 `HUMAN`과 메인 메뉴의 `CREATE` 라벨을 `한`으로 교체합니다. 이는 테스트 데이터이며 번역 배포판이 아닙니다. 검증된 주소, 인코딩 방식, 현재 제한 사항 및 다음 구현 단계는 `docs/korean_rendering_plan.md`를 참고하세요.
+### 실행 직후 종료되는 경우
+
+- Gold판이 아닌 GOG DOS판에 적용했는지 확인합니다.
+- 다른 패치를 제거하고 깨끗하게 재설치한 게임에 다시 적용합니다.
+- GOG 설치 폴더 경로와 DOSBox 설정 파일이 원래 상태인지 확인합니다.
+
+### 저장 파일이 보이지 않는 경우
+
+- `DSAVANT` 폴더 안에 `SAVEGAME.DBS`가 있는지 확인합니다.
+- 게임의 저장 화면에서 `C:\DSAVANT\`가 표시되는 것은 정상입니다.
+- 다른 위저드리 7 설치본을 실행하고 있지 않은지 확인합니다.
+
+### 원래 상태로 되돌리고 싶은 경우
+
+백업한 `DSAVANT` 폴더를 복원하거나 GOG에서 게임을 재설치하십시오.
+
+## 오류 제보
+
+[GitHub Issues](https://github.com/munument1/-KR-Wizardry7/issues)에 다음 정보를
+적어 주시면 확인에 도움이 됩니다.
+
+- 오류가 발생한 화면의 스크린샷
+- 오류 직전 선택한 메뉴나 행동
+- 새 게임인지 기존 저장 파일인지 여부
+- 사용한 패치 버전
+
+## 개발 자료
+
+패치를 사용하는 데 아래 문서를 읽을 필요는 없습니다. 번역이나 실행 파일 패치
+개발을 이어갈 때만 참고하십시오.
+
+- [`docs/WEBGPT_HANDOFF_2026-08-31.md`](docs/WEBGPT_HANDOFF_2026-08-31.md)
+- [`docs/VERSION_0.39_OVERLAY_SAFE_RESIDENT_2026-08-30.md`](docs/VERSION_0.39_OVERLAY_SAFE_RESIDENT_2026-08-30.md)
+- [`docs/korean_rendering_plan.md`](docs/korean_rendering_plan.md)
+
+## 면책
+
+Wizardry 및 관련 상표·게임 데이터의 권리는 각 권리자에게 있습니다. 이 저장소는
+비공식 팬 번역 프로젝트이며 원 제작사나 GOG와 관련이 없습니다.
