@@ -32,3 +32,19 @@ jobs:
           objcopy --version
       - name: Run v40 roster tests
         run: python -m unittest tests.test_build_dos_v40_roster_abbrev -v
+      - name: Download published v0.39 package
+        run: |
+          mkdir -p outputs/v39_release
+          curl -L --fail --retry 3 \
+            -o outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.39/Wizardry7_Korean_0.39_overlay_safe_resident.zip
+          echo "27daa79c4f812d098ed98ae5ba8d7b089525211f7f0efaf5fa92cfd2cb3acc49  outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip" | sha256sum -c -
+          unzip -q outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip -d outputs/v39_release
+      - name: Build v40 from exact v0.39 payload
+        run: |
+          python tools/build_dos_v40_roster_abbrev.py \
+            --v39-dir outputs/v39_release \
+            --output-dir outputs/v40_roster \
+            --zip-output outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
+          unzip -t outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
+          sha256sum outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
