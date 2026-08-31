@@ -48,3 +48,12 @@ jobs:
             --zip-output outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
           unzip -t outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
           sha256sum outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
+      - name: Upload v40 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wizardry7_Korean_0.40_roster_abbrev_fix
+          path: |
+            outputs/Wizardry7_Korean_0.40_roster_abbrev_fix.zip
+            outputs/v40_roster/UI_V40_REPORT.json
+          if-no-files-found: error
+          retention-days: 3
