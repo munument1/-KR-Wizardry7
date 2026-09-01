@@ -1,29 +1,26 @@
 #!/usr/bin/env python3
-"""Build v42 by removing scene-control bytes from Korean rank payloads.
+"""Build v42 with scene-safe Korean rank bytes.
 
-v0.41 still allows the two rank bytes inside ``ESC + rank + rank`` Korean
-characters to equal raw scene-parser control bytes.  Most text paths understand
-our three-byte glyph unit, but the cinematic/event control dispatcher still
-examines raw bytes.  A Korean payload byte such as ``%``, ``&`` or ``]`` can
-therefore be mistaken for a real scene command.  The result can be much worse
-than a bad glyph: the wrong picture/event branch may run and the following text
-stream loses synchronization.
+v0.41 stores each Korean glyph as ``ESC + rank + rank``.  Some field/cinematic
+paths still inspect raw bytes for scene commands, so a rank byte equal to one of
+``! % & ] @ # |`` can be mistaken for a real command.  That can select the
+wrong event/picture and then desynchronize the following text stream.
 
-v42 transcodes the already-localized v0.41 message bank without needing the
-translation workbook.  It keeps literal ASCII scene commands intact, but never
-uses the following bytes as Korean rank payload bytes::
+v42 transcodes the already-localized v0.41 message bank to a rank alphabet that
+never uses those structural bytes.  Literal ASCII control bytes remain exactly
+unchanged.  Space (0x20) stays available for compression because the v39 scene
+delimiter dispatcher already skips complete Korean glyph units.
 
-    ! % & ] @ # |
+The v0.41 runtime renderer is the v19/v39 resident renderer in VBFONT0.VGA, not
+the older experimental DS.EXE cave renderer.  v42 therefore updates:
 
-Space (0x20) deliberately remains available because it is the cheapest Huffman
-symbol and excluding it can push MSG.DBS past the DOS 256 KiB bank limit.  The
-scene delimiter helpers introduced in v25/v39 already skip complete Korean
-glyphs when searching for spaces.
+* VBFONT0.VGA 0x0D00: 256-byte inverse-rank table;
+* VBFONT0.VGA 0x0E00: fixed-size 7-byte resident glyph records, reordered to
+  match the new safe codebook while retaining unused legacy glyphs at the tail;
+* resident_string's ``ALPHABET_LEN`` immediate between 0x0937 and 0x0A30.
 
-The Unicode character order does not change, so the existing pre-rendered glyph
-table in DS.EXE remains valid.  Only the 256-byte inverse-rank table and the
-embedded rank-alphabet size are rewritten in DS.EXE.  All file sizes remain
-unchanged.
+The v39 dispatcher at 0x0AF0 and DS.EXE are left untouched.  File sizes and
+save format remain unchanged.
 """
 
 from __future__ import annotations
@@ -35,6 +32,7 @@ import json
 import struct
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 from build_dos_messages import (
     DEFAULT_ESCAPE,
@@ -49,32 +47,79 @@ from build_dos_messages import (
 )
 from build_dos_v19_baseline import sha256, write_deterministic_zip
 from extract_gold_messages import HEADER_ENTRIES, extract_messages, parse_header
-from patch_dos_korean_renderer import CAVE_END, CAVE_START, MZ_HEADER_SIZE
 
 
-# These bytes have raw structural meaning in the cinematic/event text parser.
-# 0x20 (space) is intentionally NOT reserved; v25/v39 already protect it while
-# splitting words, and keeping it in the rank alphabet saves several KiB.
+# Raw structural bytes used by the cinematic/event text language.  0x20 is
+# intentionally not reserved: v25/v39 already protects Korean glyphs while
+# searching for spaces/underscores, and removing 0x20 can exceed 256 KiB.
 SCENE_RANK_RESERVED = bytes.fromhex("21 25 26 5D 40 23 7C")
 SCENE_RANK_RESERVED_SET = frozenset(SCENE_RANK_RESERVED)
 JAN_ETTE_MESSAGE_RANGE = range(29600, 29757)
 MAX_HUFFMAN_ITERATIONS = 32
 
+# v19 resident renderer layout, retained by v39/v41.
+VBFONT_RESIDENT_STRING_START = 0x0937
+VBFONT_RESIDENT_WIDTH_START = 0x0A30
+VBFONT_V39_DISPATCHER_START = 0x0AF0
+VBFONT_V39_DISPATCHER_END = 0x0B6C
+VBFONT_INVERSE_TABLE = 0x0D00
+VBFONT_GLYPH_TABLE = 0x0E00
+VBFONT_GLYPH_RECORD_SIZE = 7
+V19_EXPECTED_ALPHABET_LEN = 121
+V19_EXPECTED_CUSTOM_COUNT = 1110
+
 
 def _codebook_pairs_from_report(report: dict[str, object]) -> dict[str, tuple[int, int]]:
+    """Accept both historical ``char: 'AA BB'`` and metadata codebooks."""
     raw = report.get("codebook")
     if not isinstance(raw, dict):
         raise ValueError("korean_codebook.json has no codebook object")
     result: dict[str, tuple[int, int]] = {}
     for character, metadata in raw.items():
-        if not isinstance(character, str) or not isinstance(metadata, dict):
-            raise ValueError("invalid codebook entry")
-        encoded = metadata.get("bytes")
+        if not isinstance(character, str):
+            raise ValueError("invalid codebook character key")
+        encoded: Any = metadata.get("bytes") if isinstance(metadata, dict) else metadata
         if not isinstance(encoded, str):
             raise ValueError(f"codebook entry {character!r} has no byte pair")
-        left_hex, right_hex = encoded.split()
-        result[character] = (int(left_hex, 16), int(right_hex, 16))
+        parts = encoded.split()
+        if len(parts) != 2:
+            raise ValueError(f"codebook entry {character!r} is not a two-byte pair")
+        result[character] = (int(parts[0], 16), int(parts[1], 16))
     return result
+
+
+def recover_dense_rank_alphabet(
+    codebook: dict[str, tuple[int, int]],
+) -> list[int]:
+    """Recover the rank alphabet used when rectangular pairs were assigned."""
+    pairs = list(codebook.values())
+    if not pairs:
+        raise ValueError("cannot recover rank alphabet from an empty codebook")
+
+    first_left = pairs[0][0]
+    alphabet: list[int] = []
+    for left, right in pairs:
+        if left != first_left:
+            break
+        alphabet.append(right)
+    if not alphabet or alphabet[0] != first_left:
+        raise ValueError("published codebook does not begin with rank pair (0, 0)")
+    if len(alphabet) == len(pairs):
+        raise ValueError("codebook is too small to expose a complete rank row")
+    if len(set(alphabet)) != len(alphabet):
+        raise ValueError("recovered first rank row contains duplicate bytes")
+
+    size = len(alphabet)
+    for index, pair in enumerate(pairs):
+        if index // size >= size:
+            raise ValueError("published codebook exceeds recovered rectangular capacity")
+        expected = (alphabet[index // size], alphabet[index % size])
+        if pair != expected:
+            raise ValueError(
+                "published codebook is not a dense rectangular rank sequence at "
+                f"index {index}: expected {expected!r}, found {pair!r}"
+            )
+    return alphabet
 
 
 def decode_localized_display(raw: bytes, codebook: dict[str, tuple[int, int]]) -> str:
@@ -130,7 +175,6 @@ def build_safe_unicode_codebook(
                 frequencies[unit] += 1
 
     alphabet = safe_rank_alphabet(codes)
-    pairs = itertools.product(alphabet, repeat=2)
     ordered_chars = sorted(
         frequencies,
         key=lambda character: (-frequencies[character], ord(character)),
@@ -140,6 +184,7 @@ def build_safe_unicode_codebook(
         raise ValueError(
             f"{len(ordered_chars)} custom characters exceed safe pair capacity {capacity}"
         )
+    pairs = itertools.product(alphabet, repeat=2)
     return {
         character: pair
         for character, pair in zip(ordered_chars, pairs)
@@ -147,6 +192,7 @@ def build_safe_unicode_codebook(
 
 
 def count_reserved_rank_payloads(raw: bytes) -> int:
+    """Count structural bytes only when they occur inside Korean rank pairs."""
     count = 0
     cursor = 0
     while cursor < len(raw):
@@ -174,61 +220,129 @@ def _rank_table(alphabet: list[int]) -> bytes:
     return bytes(ranks.get(value, 0xFF) for value in range(256))
 
 
-def patch_renderer_rank_decoder(
-    ds_exe: bytes,
-    old_misc: bytes,
+def patch_vbfont_rank_decoder(
+    vbfont: bytes,
     old_codebook_report: dict[str, object],
     new_misc: bytes,
     new_codebook: dict[str, tuple[int, int]],
     new_alphabet: list[int],
 ) -> tuple[bytes, dict[str, object]]:
-    old_pairs = _codebook_pairs_from_report(old_codebook_report)
-    if list(old_pairs) != list(new_codebook):
+    """Migrate the resident v19/v39 VBFONT0 renderer to the safe rank mapping."""
+    old_codebook = _codebook_pairs_from_report(old_codebook_report)
+    old_order = list(old_codebook)
+    old_alphabet = recover_dense_rank_alphabet(old_codebook)
+    if len(old_alphabet) != V19_EXPECTED_ALPHABET_LEN:
         raise ValueError(
-            "Unicode codebook order changed; existing pre-rendered glyph table cannot be reused"
+            f"v41 rank alphabet is {len(old_alphabet)}, expected {V19_EXPECTED_ALPHABET_LEN}"
+        )
+    if len(old_order) != V19_EXPECTED_CUSTOM_COUNT:
+        raise ValueError(
+            f"v41 glyph count is {len(old_order)}, expected {V19_EXPECTED_CUSTOM_COUNT}"
         )
 
-    old_codes = huffman_codes(old_misc)
-    old_alphabet = sorted(
-        (value for value in old_codes if value != DEFAULT_ESCAPE),
-        key=lambda value: (len(old_codes[value]), value),
-    )
-    converged_alphabet = safe_rank_alphabet(huffman_codes(new_misc))
-    if converged_alphabet != new_alphabet:
+    converged = safe_rank_alphabet(huffman_codes(new_misc))
+    if converged != new_alphabet:
         raise ValueError("safe rank alphabet did not converge with final MISC.HDR")
 
-    old_table = _rank_table(old_alphabet)
-    new_table = _rank_table(new_alphabet)
-    data = bytearray(ds_exe)
-    cave_start = MZ_HEADER_SIZE + CAVE_START
-    cave_end = min(len(data), MZ_HEADER_SIZE + CAVE_END)
-    cave = bytes(data[cave_start:cave_end])
+    new_order = list(new_codebook)
+    old_set = set(old_order)
+    new_set = set(new_order)
+    added = sorted(new_set - old_set)
+    if added:
+        raise ValueError(
+            "new v42 codebook contains characters without a v41 resident glyph: "
+            f"{added[:8]!r}"
+        )
+    unused_legacy = [character for character in old_order if character not in new_set]
+    embedded_order = new_order + unused_legacy
+    if len(embedded_order) != len(old_order):
+        raise AssertionError("resident glyph count changed during migration")
 
-    table_at = cave.find(old_table)
-    if table_at < 0 or cave.find(old_table, table_at + 1) >= 0:
-        raise ValueError("expected exactly one v41 renderer rank table in DS.EXE cave")
-    table_file_offset = cave_start + table_at
-    data[table_file_offset : table_file_offset + 256] = new_table
+    if len(vbfont) < VBFONT_GLYPH_TABLE + len(old_order) * VBFONT_GLYPH_RECORD_SIZE:
+        raise ValueError("VBFONT0.VGA is too small for the resident glyph table")
+    data = bytearray(vbfont)
 
-    old_size_pattern = (
-        b"\xB9" + len(old_alphabet).to_bytes(2, "little") + b"\xF7\xE1"
+    old_inverse = _rank_table(old_alphabet)
+    actual_inverse = bytes(
+        data[VBFONT_INVERSE_TABLE : VBFONT_INVERSE_TABLE + len(old_inverse)]
     )
-    new_size_pattern = (
-        b"\xB9" + len(new_alphabet).to_bytes(2, "little") + b"\xF7\xE1"
+    if actual_inverse != old_inverse:
+        first_diff = next(
+            (
+                index
+                for index, (actual, expected) in enumerate(zip(actual_inverse, old_inverse))
+                if actual != expected
+            ),
+            None,
+        )
+        raise ValueError(
+            "VBFONT0 0x0D00 inverse table does not match published v41 codebook; "
+            f"first_diff={first_diff!r}"
+        )
+    new_inverse = _rank_table(new_alphabet)
+    data[VBFONT_INVERSE_TABLE : VBFONT_INVERSE_TABLE + 256] = new_inverse
+
+    glyph_bytes = len(old_order) * VBFONT_GLYPH_RECORD_SIZE
+    glyph_start = VBFONT_GLYPH_TABLE
+    glyph_end = glyph_start + glyph_bytes
+    old_glyphs = bytes(data[glyph_start:glyph_end])
+    old_index = {character: index for index, character in enumerate(old_order)}
+    reordered = b"".join(
+        old_glyphs[
+            old_index[character] * VBFONT_GLYPH_RECORD_SIZE :
+            (old_index[character] + 1) * VBFONT_GLYPH_RECORD_SIZE
+        ]
+        for character in embedded_order
     )
-    cave = bytes(data[cave_start:cave_end])
-    size_at = cave.find(old_size_pattern)
-    if size_at < 0 or cave.find(old_size_pattern, size_at + 1) >= 0:
-        raise ValueError("expected exactly one renderer alphabet-size multiply in DS.EXE cave")
-    size_file_offset = cave_start + size_at
-    data[size_file_offset : size_file_offset + len(old_size_pattern)] = new_size_pattern
+    if len(reordered) != glyph_bytes:
+        raise AssertionError("resident glyph migration changed glyph table size")
+    data[glyph_start:glyph_end] = reordered
+
+    old_len_pattern = (
+        b"\xBB"
+        + len(old_alphabet).to_bytes(2, "little")
+        + b"\xF7\xE3"  # mov bx,ALPHABET_LEN ; mul bx
+    )
+    new_len_pattern = (
+        b"\xBB"
+        + len(new_alphabet).to_bytes(2, "little")
+        + b"\xF7\xE3"
+    )
+    resident = bytes(data[VBFONT_RESIDENT_STRING_START:VBFONT_RESIDENT_WIDTH_START])
+    pattern_at = resident.find(old_len_pattern)
+    if pattern_at < 0 or resident.find(old_len_pattern, pattern_at + 1) >= 0:
+        raise ValueError(
+            "expected exactly one v41 ALPHABET_LEN multiply in resident_string"
+        )
+    alphabet_patch_offset = VBFONT_RESIDENT_STRING_START + pattern_at
+    data[
+        alphabet_patch_offset : alphabet_patch_offset + len(old_len_pattern)
+    ] = new_len_pattern
+
+    old_dispatcher = vbfont[VBFONT_V39_DISPATCHER_START:VBFONT_V39_DISPATCHER_END]
+    new_dispatcher = bytes(
+        data[VBFONT_V39_DISPATCHER_START:VBFONT_V39_DISPATCHER_END]
+    )
+    if old_dispatcher != new_dispatcher:
+        raise AssertionError("v39 resident scene dispatcher was modified")
+    if len(data) != len(vbfont):
+        raise AssertionError("VBFONT0.VGA size changed")
 
     return bytes(data), {
+        "target_file": "VBFONT0.VGA",
+        "old_rank_alphabet_source": "published_codebook_dense_pairs",
         "old_rank_alphabet_size": len(old_alphabet),
         "new_rank_alphabet_size": len(new_alphabet),
-        "rank_table_file_offset": f"0x{table_file_offset:X}",
-        "alphabet_size_file_offset": f"0x{size_file_offset + 1:X}",
-        "glyph_order_preserved": True,
+        "inverse_rank_table_offset": f"0x{VBFONT_INVERSE_TABLE:04X}",
+        "glyph_table_offset": f"0x{VBFONT_GLYPH_TABLE:04X}",
+        "glyph_record_size": VBFONT_GLYPH_RECORD_SIZE,
+        "active_glyph_record_count": len(new_order),
+        "embedded_glyph_record_count": len(embedded_order),
+        "unused_legacy_glyphs": unused_legacy,
+        "glyph_table_reordered": old_order != embedded_order,
+        "glyph_character_set_preserved": set(embedded_order) == old_set,
+        "alphabet_size_patch_offset": f"0x{alphabet_patch_offset + 1:04X}",
+        "v39_dispatcher_preserved": True,
     }
 
 
@@ -429,10 +543,9 @@ def main() -> int:
             data = json.dumps(
                 new_codebook_report, ensure_ascii=False, indent=2
             ).encode("utf-8")
-        elif name == "DS.EXE":
-            data, renderer_report = patch_renderer_rank_decoder(
+        elif name == "VBFONT0.VGA":
+            data, renderer_report = patch_vbfont_rank_decoder(
                 data,
-                old_misc,
                 old_codebook_report,
                 new_misc,
                 new_codebook,
@@ -441,7 +554,7 @@ def main() -> int:
         payloads[f"DSAVANT/{name}"] = data
 
     if renderer_report is None:
-        raise ValueError("DS.EXE was not found in v41 payload")
+        raise ValueError("VBFONT0.VGA was not found in v41 payload")
 
     report = {
         "format": "Wizardry VII DOS v42 scene/event-safe Korean rank encoding",
@@ -454,8 +567,10 @@ def main() -> int:
             "transcode all localized message records to a rank alphabet that excludes scene-control bytes",
             "keep literal ASCII scene commands unchanged",
             "keep 0x20 space available for compression; the v39 delimiter helper already protects Korean spaces",
-            "rewrite the DS.EXE inverse-rank table and alphabet-size constant only",
-            "reuse the existing glyph table because Unicode character order is unchanged",
+            "rewrite VBFONT0.VGA inverse-rank table and resident ALPHABET_LEN",
+            "reorder fixed 7-byte resident glyph records to the new safe codebook order",
+            "retain unused legacy glyph records at the tail so CUSTOM_COUNT and file size stay unchanged",
+            "leave DS.EXE and the v39 0x0AF0 scene dispatcher untouched",
             "retain the v41 roster M/F boundary fix and all v39 overlay-safe helpers",
         ],
         "event_regression_target": {
@@ -486,8 +601,9 @@ def main() -> int:
             "all decoded message text and literal control bytes round-trip unchanged",
             "no reserved scene-control byte appears inside any Korean rank pair",
             "MSG.DBS remains exactly 256 KiB",
-            "DS.EXE size and every OVR/VGA file size remain unchanged",
-            "glyph order, save format, roster fix, and gameplay code are unchanged",
+            "DS.EXE is byte-for-byte inherited from v0.41",
+            "VBFONT0.VGA and every OVR keep their file sizes",
+            "v39 resident scene dispatcher, save format, roster fix, and gameplay code are unchanged",
         ],
         "payloads": {
             name: {"size": len(data), "sha256": sha256(data)}
