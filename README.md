@@ -1,18 +1,18 @@
 # 위저드리 7 DOS 한글화 패치
 
 **Wizardry VII: Crusaders of the Dark Savant** GOG DOS판을 위한 한글화
-패치입니다. 현재 배포 버전은 **0.39**입니다.
+패치입니다. 현재 배포 버전은 **0.42**입니다.
 
 > 이 패치는 **GOG에 포함된 DOS판**용입니다. Wizardry 7 Gold에는 적용하지
 > 마십시오.
 
 ## 다운로드
 
-### [위저드리 7 DOS 한글화 0.39 받기](https://github.com/munument1/-KR-Wizardry7/releases/download/v0.39/Wizardry7_Korean_0.39_overlay_safe_resident.zip)
+### [위저드리 7 DOS 한글화 0.42 받기](https://github.com/munument1/-KR-Wizardry7/releases/download/v0.42/Wizardry7_Korean_0.42_scene_safe.zip)
 
-- [릴리스 설명 보기](https://github.com/munument1/-KR-Wizardry7/releases/tag/v0.39)
-- 파일명: `Wizardry7_Korean_0.39_overlay_safe_resident.zip`
-- SHA-256: `27DAA79C4F812D098ED98AE5BA8D7B089525211F7F0EFAF5FA92CFD2CB3ACC49`
+- [릴리스 설명 보기](https://github.com/munument1/-KR-Wizardry7/releases/tag/v0.42)
+- 파일명: `Wizardry7_Korean_0.42_scene_safe.zip`
+- SHA-256: `BD48E652909BAE330049135D83E8EFB5B6FB7B2FB3388536C708D808D75883DE`
 
 ## 설치 방법
 
@@ -47,7 +47,21 @@ Wizardry 7\
 
 DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상입니다.
 
-## 0.39에서 확인된 내용
+## 0.42 주요 수정
+
+- 초반 필드의 자네트(Jan-Ette) 이벤트가 다른 H'Jenn-Ra/T'Rang 장면으로 잘못
+  이어질 수 있던 문제 수정
+- 잘못된 이벤트 뒤 대사 한글이 노란 블록/깨진 문자열로 무너지던 원인 수정
+- 한글 `0x17 + rank + rank` 내부에 장면 제어 바이트 `! % & ] @ # |`가 들어가지
+  않도록 전체 메시지 재인코딩
+- 전체 한글 rank 제어바이트 충돌 `26882 -> 0`
+- 자네트 이벤트 메시지 구간 `29600..29756` 충돌 `217 -> 0`
+- 실사용 resident 한글 디코더인 `VBFONT0.VGA`의 rank 테이블과 글리프 순서를 새
+  코드북에 맞게 갱신
+- `DS.EXE`, 기존 v0.39 장면 디스패처, v0.41 캐릭터 목록 M/F 경계 수정 유지
+- `MSG.DBS` 256 KiB 크기와 기존 OVR/VGA 파일 크기 유지
+
+## 현재까지 확인된 내용
 
 - 한글 메뉴와 캐릭터 생성 화면
 - 한글 애니메이션 타이틀 로고
@@ -58,8 +72,12 @@ DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상�
 - `저장 & 종료`
 - 새로 기록한 저장 파일 재불러오기
 
-저장 관련 기능은 실제 DOSBox에서 기존 저장 불러오기 → 저장 및 계속 → 저장 및
-종료 → 방금 기록한 파일 재불러오기 순서로 검증했습니다.
+저장 관련 기능은 이전 버전에서 실제 DOSBox로 기존 저장 불러오기 → 저장 및 계속 →
+저장 및 종료 → 방금 기록한 파일 재불러오기 순서로 검증했습니다.
+
+0.42 빌드는 자동 회귀 검증에서 메시지 원문/제어문자 라운드트립, 장면 제어바이트
+충돌 0개, 자네트 구간 충돌 0개, 고정 파일 크기 보존을 확인했습니다. 초반 자네트
+조우는 새 게임에서 추가 실플레이 제보를 받고 있습니다.
 
 ## 설치 전 알아둘 점
 
@@ -83,6 +101,14 @@ DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상�
 - `DSAVANT` 폴더 안에 `SAVEGAME.DBS`가 있는지 확인합니다.
 - 게임의 저장 화면에서 `C:\DSAVANT\`가 표시되는 것은 정상입니다.
 - 다른 위저드리 7 설치본을 실행하고 있지 않은지 확인합니다.
+
+### 초반 필드에서 다른 NPC/그림이 나오는 경우
+
+- 패치 버전이 0.42인지 확인합니다.
+- `VBFONT0.VGA`, `MSG.DBS`, `MSG.HDR`, `MISC.HDR`가 0.42 ZIP의 파일로 실제
+  덮어써졌는지 확인합니다.
+- 가능하면 새 게임으로 같은 지점을 재현하고 스크린샷과 직전 행동을 함께
+  제보해 주십시오.
 
 ### 원래 상태로 되돌리고 싶은 경우
 
