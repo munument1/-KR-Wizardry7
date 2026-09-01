@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install build dependency
+        run: python -m pip install pillow
       - name: Run v42 static tests
         run: python -m unittest tests.test_build_dos_v42_scene_safe -v
       - name: Download exact published v0.41 base
