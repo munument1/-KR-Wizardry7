@@ -8,7 +8,8 @@ v0.45는 GOG DOS판 `SCENARIO.DBS`의 고정폭 이름 필드를 한국어화한
 - 몬스터 이름: 250 레코드 × 4 변형 = 1,000 슬롯
 - 각 이름 슬롯: 정확히 16바이트
 
-번역 원본은 `translations/dos_scenario_ko.csv`에 보존한다.
+번역 원본 작업본의 SHA-256은
+`32322efbf5ccd647e2696a5f029c4098c1ea0427679b3527fdd9aa36832785ae`이다.
 
 ## 초기 후보판에서 발견된 문제
 
@@ -41,10 +42,11 @@ SHA-256 8ff513e0469dd12b8b175c7a99b43029eba5b04f70b7794627cc644e1fe34875
 
 VBFONT0.VGA
 SHA-256 f7d31cb5afe492840d75eec8eafc87975867601772cc2290d08ffc77185aaa2f
-
-korean_codebook.json
-SHA-256 376d10c1031f1bc7ee125905b72675f14cfae604caa1dacbaf2001b732bce477
 ```
+
+`korean_codebook.json`은 게임 런타임에서 읽는 파일이 아니라 개발/검증용 메타데이터다.
+v0.45 빌더는 v0.44의 메시지 코드북을 그대로 유지한 채 SCENARIO 안전 인코딩 설명과
+검증 해시만 추가한다.
 
 실제 게임에서 아이템 이름과 몬스터 이름 출력, 그리고 v0.44에서 수정한 초반
 자네트 이벤트가 함께 정상 동작하는 것을 확인한 뒤 v0.45 릴리스 기준으로 채택했다.
