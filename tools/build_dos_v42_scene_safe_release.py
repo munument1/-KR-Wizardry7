@@ -1,24 +1,16 @@
 #!/usr/bin/env python3
 """Release entry point for the v42 scene-safe Korean transcoder.
 
-The first v42 implementation correctly removed scene-control values from rank
-payloads, but it assumed that rebuilding the codebook would keep exactly the
-same Unicode order as v41.  The published v41 codebook is a legacy char->pair
-mapping and its historical order is not guaranteed to match a fresh frequency
-sort.
+The published v41 renderer and codebook were produced from the rank ordering
+that existed while the codebook was assigned.  Later Huffman retraining can
+change code lengths without changing those assigned byte pairs, so deriving the
+old renderer rank table from the final MISC.HDR is not reliable.
 
-This wrapper makes the migration robust:
-
-* accept both legacy ``char: "AA BB"`` and modern metadata codebooks;
-* allow the new safe codebook to choose a different character order;
-* locate the v41 rank/glyph tables from the renderer's assembled layout rather
-  than searching a large binary cave for a 256-byte value sequence;
-* reorder the already embedded 38-byte glyph records in DS.EXE to the new
-  Unicode order, instead of regenerating any font bitmap;
-* retain any legacy glyph that is no longer referenced at the unused tail;
-* then update the inverse-rank table and rank-alphabet size as v42 intended.
-
-No executable code is relocated and DS.EXE keeps the same byte size.
+This wrapper therefore recovers the historical rank alphabet directly from the
+published dense rectangular codebook, migrates the embedded glyph table to the
+new safe codebook order, and updates the renderer's inverse-rank table and
+alphabet-size constant.  No executable code is relocated and DS.EXE keeps the
+same byte size.
 """
 
 from __future__ import annotations
@@ -26,7 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 import build_dos_v42_scene_safe as impl
-from build_dos_messages import DEFAULT_ESCAPE, huffman_codes
+from build_dos_messages import huffman_codes
 from patch_dos_korean_renderer import Assembler16, emit_renderer, emit_width_hook
 
 
@@ -51,6 +43,39 @@ def compatible_codebook_pairs(report: dict[str, object]) -> dict[str, tuple[int,
     return result
 
 
+def recover_dense_rank_alphabet(
+    codebook: dict[str, tuple[int, int]],
+) -> list[int]:
+    """Recover the alphabet used when sequential rectangular pairs were assigned."""
+    pairs = list(codebook.values())
+    if not pairs:
+        raise ValueError("cannot recover rank alphabet from an empty codebook")
+    first_left = pairs[0][0]
+    alphabet: list[int] = []
+    for left, right in pairs:
+        if left != first_left:
+            break
+        alphabet.append(right)
+    if not alphabet:
+        raise ValueError("published codebook has no first rectangular rank row")
+    if alphabet[0] != first_left:
+        raise ValueError("published codebook does not begin with rank pair (0, 0)")
+    if len(alphabet) == len(pairs):
+        raise ValueError("codebook is too small to expose a complete rank row")
+    if len(set(alphabet)) != len(alphabet):
+        raise ValueError("recovered first rank row contains duplicate bytes")
+
+    size = len(alphabet)
+    for index, pair in enumerate(pairs):
+        expected = (alphabet[index // size], alphabet[index % size])
+        if pair != expected:
+            raise ValueError(
+                "published codebook is not a dense rectangular rank sequence at "
+                f"index {index}: expected {expected!r}, found {pair!r}"
+            )
+    return alphabet
+
+
 def renderer_table_runtime_offset(alphabet_size: int, glyph_count: int) -> int:
     """Recreate only the code layout to resolve the rank-table label."""
     asm = Assembler16(impl.CAVE_START)
@@ -70,6 +95,7 @@ def patch_renderer_rank_decoder_reordered(
 ) -> tuple[bytes, dict[str, object]]:
     old_pairs = compatible_codebook_pairs(old_codebook_report)
     old_order = list(old_pairs)
+    old_alphabet = recover_dense_rank_alphabet(old_pairs)
     new_order = list(new_codebook)
     old_set = set(old_order)
     new_set = set(new_order)
@@ -79,17 +105,12 @@ def patch_renderer_rank_decoder_reordered(
             "new v42 codebook contains characters with no embedded v41 glyph: "
             f"added={added[:8]!r}"
         )
-    # A historical codebook can contain a glyph that later message patches no
-    # longer reference. Keep such records after the active v42 glyphs so the
-    # fixed-size renderer payload and its old glyph-count guard remain valid.
+    # Historical codebooks can retain a glyph no current message references.
+    # Keep those records at the unused tail so the fixed-size renderer payload
+    # and its original glyph-count guard remain valid.
     missing_order = [character for character in old_order if character not in new_set]
     embedded_order = new_order + missing_order
 
-    old_codes = huffman_codes(old_misc)
-    old_alphabet = sorted(
-        (value for value in old_codes if value != DEFAULT_ESCAPE),
-        key=lambda value: (len(old_codes[value]), value),
-    )
     converged_alphabet = impl.safe_rank_alphabet(huffman_codes(new_misc))
     if converged_alphabet != new_alphabet:
         raise ValueError("safe rank alphabet did not converge with final MISC.HDR")
@@ -117,8 +138,9 @@ def patch_renderer_rank_decoder_reordered(
             None,
         )
         raise ValueError(
-            "v41 inverse-rank table does not match MISC.HDR at assembled offset; "
-            f"first_diff={first_diff!r}"
+            "v41 inverse-rank table does not match published codebook ranks at "
+            f"assembled offset; first_diff={first_diff!r}, "
+            f"actual0={actual_table[:8].hex(' ')}, expected0={old_table[:8].hex(' ')}"
         )
 
     glyph_file_offset = table_file_offset + 256
@@ -160,6 +182,7 @@ def patch_renderer_rank_decoder_reordered(
         raise AssertionError("v42 renderer migration changed DS.EXE size")
 
     return bytes(data), {
+        "old_rank_alphabet_source": "published_codebook_dense_pairs",
         "old_rank_alphabet_size": len(old_alphabet),
         "new_rank_alphabet_size": len(new_alphabet),
         "rank_table_runtime_offset": f"0x{table_runtime_offset:04X}",
@@ -176,9 +199,6 @@ def patch_renderer_rank_decoder_reordered(
     }
 
 
-# Patch the implementation before entering its normal build pipeline. This
-# keeps all message/Huffman/range audits in one place while making the legacy
-# v41 -> v42 renderer migration correct.
 impl._codebook_pairs_from_report = compatible_codebook_pairs
 impl.patch_renderer_rank_decoder = patch_renderer_rank_decoder_reordered
 
