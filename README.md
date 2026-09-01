@@ -1,18 +1,18 @@
 # 위저드리 7 DOS 한글화 패치
 
 **Wizardry VII: Crusaders of the Dark Savant** GOG DOS판을 위한 한글화
-패치입니다. 현재 배포 버전은 **0.42**입니다.
+패치입니다. 현재 배포 버전은 **0.44**입니다.
 
 > 이 패치는 **GOG에 포함된 DOS판**용입니다. Wizardry 7 Gold에는 적용하지
 > 마십시오.
 
 ## 다운로드
 
-### [위저드리 7 DOS 한글화 0.42 받기](https://github.com/munument1/-KR-Wizardry7/releases/download/v0.42/Wizardry7_Korean_0.42_scene_safe.zip)
+### [위저드리 7 DOS 한글화 0.44 받기](https://github.com/munument1/-KR-Wizardry7/releases/download/v0.44/Wizardry7_Korean_0.44_event_state_fix.zip)
 
-- [릴리스 설명 보기](https://github.com/munument1/-KR-Wizardry7/releases/tag/v0.42)
-- 파일명: `Wizardry7_Korean_0.42_scene_safe.zip`
-- SHA-256: `BD48E652909BAE330049135D83E8EFB5B6FB7B2FB3388536C708D808D75883DE`
+- [릴리스 설명 보기](https://github.com/munument1/-KR-Wizardry7/releases/tag/v0.44)
+- 파일명: `Wizardry7_Korean_0.44_event_state_fix.zip`
+- SHA-256: `9E1B27E2EBC617A0B4400D656B548FA4D7CD65D9F1DF23852AD8B82DF1702C1D`
 
 ## 설치 방법
 
@@ -47,19 +47,27 @@ Wizardry 7\
 
 DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상입니다.
 
-## 0.42 주요 수정
+## 0.44 주요 수정
 
-- 초반 필드의 자네트(Jan-Ette) 이벤트가 다른 H'Jenn-Ra/T'Rang 장면으로 잘못
-  이어질 수 있던 문제 수정
-- 잘못된 이벤트 뒤 대사 한글이 노란 블록/깨진 문자열로 무너지던 원인 수정
-- 한글 `0x17 + rank + rank` 내부에 장면 제어 바이트 `! % & ] @ # |`가 들어가지
-  않도록 전체 메시지 재인코딩
-- 전체 한글 rank 제어바이트 충돌 `26882 -> 0`
-- 자네트 이벤트 메시지 구간 `29600..29756` 충돌 `217 -> 0`
-- 실사용 resident 한글 디코더인 `VBFONT0.VGA`의 rank 테이블과 글리프 순서를 새
-  코드북에 맞게 갱신
-- `DS.EXE`, 기존 v0.39 장면 디스패처, v0.41 캐릭터 목록 M/F 경계 수정 유지
-- `MSG.DBS` 256 KiB 크기와 기존 OVR/VGA 파일 크기 유지
+- 초반 초보 던전 방향에서 **자네트(Jan-Ette) 대신 H'Jenn-Ra/T'Rang 장면이
+  나오는 문제의 실제 원인 수정**
+- `VBASE.OVR + 0x667B`에서 v0.35부터 사용하던 강제 성공 코드 `B8 01 00`을
+  원래 GOG 호출 `E8 4C 73`으로 복구
+- 원래 resident 루틴이 성공 반환 외에도 수행하던 `DS:1008 <- DS:59F8` 상태
+  초기화를 다시 보존
+- 한글 코어 + 순정 OVR, VMNPC 단독, VBASE 단독, 3바이트 원복, 전체 v0.43 원복
+  비교를 통해 실제 실행에서 원인 범위를 확인
+- 전체 v0.43 구성에 해당 3바이트만 복구한 빌드에서 새 게임 자네트 정상 등장 확인
+- v0.43의 parser-neutral 한글 인코딩과 장면 텍스트 깨짐 수정 유지
+
+## 0.43에서 유지되는 수정
+
+- 한글 `0x17 + rank + rank` 내부에서 DOS 장면 파서가 구조적으로 사용하는
+  `SPACE _ $ ^ ! % & ] @ # |` 11개 바이트를 전부 제외
+- 전체 한글 rank 구조 바이트 충돌 0개
+- 자네트 메시지 구간 `29600..29756` 구조 바이트 충돌 0개
+- `VBFONT0.VGA`의 rank 역변환 테이블 및 글리프 대응 갱신
+- v0.41 캐릭터 목록 M/F 경계 수정과 v0.39 저장/오버레이 안전 수정 유지
 
 ## 현재까지 확인된 내용
 
@@ -71,13 +79,13 @@ DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상�
 - `저장 & 계속`
 - `저장 & 종료`
 - 새로 기록한 저장 파일 재불러오기
+- 새 게임 초반 자네트(Jan-Ette) 조우 정상 진행
 
 저장 관련 기능은 이전 버전에서 실제 DOSBox로 기존 저장 불러오기 → 저장 및 계속 →
 저장 및 종료 → 방금 기록한 파일 재불러오기 순서로 검증했습니다.
 
-0.42 빌드는 자동 회귀 검증에서 메시지 원문/제어문자 라운드트립, 장면 제어바이트
-충돌 0개, 자네트 구간 충돌 0개, 고정 파일 크기 보존을 확인했습니다. 초반 자네트
-조우는 새 게임에서 추가 실플레이 제보를 받고 있습니다.
+0.44 빌드는 GitHub Actions에서 v0.43 공개 ZIP의 SHA-256을 먼저 검증한 다음 정확한
+`VBASE.OVR` 3바이트만 수정하며, 나머지 v0.43 payload는 그대로 유지합니다.
 
 ## 설치 전 알아둘 점
 
@@ -104,9 +112,8 @@ DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상�
 
 ### 초반 필드에서 다른 NPC/그림이 나오는 경우
 
-- 패치 버전이 0.42인지 확인합니다.
-- `VBFONT0.VGA`, `MSG.DBS`, `MSG.HDR`, `MISC.HDR`가 0.42 ZIP의 파일로 실제
-  덮어써졌는지 확인합니다.
+- 패치 버전이 0.44인지 확인합니다.
+- 특히 `VBASE.OVR`가 0.44 ZIP의 파일로 실제 덮어써졌는지 확인합니다.
 - 가능하면 새 게임으로 같은 지점을 재현하고 스크린샷과 직전 행동을 함께
   제보해 주십시오.
 
@@ -129,6 +136,7 @@ DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상�
 패치를 사용하는 데 아래 문서를 읽을 필요는 없습니다. 번역이나 실행 파일 패치
 개발을 이어갈 때만 참고하십시오.
 
+- [`docs/V44_JAN_ETTE_EVENT_ROOT_CAUSE.md`](docs/V44_JAN_ETTE_EVENT_ROOT_CAUSE.md)
 - [`docs/WEBGPT_HANDOFF_2026-08-31.md`](docs/WEBGPT_HANDOFF_2026-08-31.md)
 - [`docs/VERSION_0.39_OVERLAY_SAFE_RESIDENT_2026-08-30.md`](docs/VERSION_0.39_OVERLAY_SAFE_RESIDENT_2026-08-30.md)
 - [`docs/korean_rendering_plan.md`](docs/korean_rendering_plan.md)
