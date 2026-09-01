@@ -64,10 +64,12 @@ class ParserNeutralV43Tests(unittest.TestCase):
         initial = v43._initial_segments(entries, records)
         self.assertEqual(v43._layout_size(initial, packed), 1224)
         split = [initial[0], (1, (200,)), (1, (201,))]
-        self.assertEqual(v43._layout_size(split, packed), 1100)
+        # 200 can now use 100 bytes of the 124-byte tail.  Only 24 bytes are
+        # wasted before 201 starts in the next bank: 1224 -> 1124.
+        self.assertEqual(v43._layout_size(split, packed), 1124)
         data, out_entries, padding = v43.pack_segments(split, packed)
-        self.assertEqual(len(data), 1100)
-        self.assertEqual(padding, 0)
+        self.assertEqual(len(data), 1124)
+        self.assertEqual(padding, 24)
         self.assertEqual(
             [(entry.start_id, entry.id_span) for entry in out_entries],
             [(100, 0), (200, 0), (201, 0)],
