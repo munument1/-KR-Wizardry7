@@ -2,15 +2,16 @@
 """Release entry point for the v42 scene-safe Korean transcoder.
 
 The published v41 renderer and codebook were produced from the rank ordering
-that existed while the codebook was assigned.  Later Huffman retraining can
+that existed while the codebook was assigned. Later Huffman retraining can
 change code lengths without changing those assigned byte pairs, so deriving the
 old renderer rank table from the final MISC.HDR is not reliable.
 
-This wrapper therefore recovers the historical rank alphabet directly from the
-published dense rectangular codebook, migrates the embedded glyph table to the
-new safe codebook order, and updates the renderer's inverse-rank table and
-alphabet-size constant.  No executable code is relocated and DS.EXE keeps the
-same byte size.
+This wrapper recovers the historical rank alphabet from the published dense
+rectangular codebook. It also reads the actual rank-table address from the
+installed v41 renderer machine code, so later source-code layout changes cannot
+make migration offsets drift. The embedded 38-byte glyph records are reordered
+to the new safe codebook order, while unused historical glyphs remain at the
+tail. DS.EXE keeps exactly the same size.
 """
 
 from __future__ import annotations
@@ -19,10 +20,10 @@ from typing import Any
 
 import build_dos_v42_scene_safe as impl
 from build_dos_messages import huffman_codes
-from patch_dos_korean_renderer import Assembler16, emit_renderer, emit_width_hook
 
 
 GLYPH_RECORD_SIZE = 38
+RANK_LOAD_OPCODE = bytes.fromhex("2E 8A 87")  # mov al,cs:[bx+imm16]
 
 
 def compatible_codebook_pairs(report: dict[str, object]) -> dict[str, tuple[int, int]]:
@@ -76,13 +77,33 @@ def recover_dense_rank_alphabet(
     return alphabet
 
 
-def renderer_table_runtime_offset(alphabet_size: int, glyph_count: int) -> int:
-    """Recreate only the code layout to resolve the rank-table label."""
-    asm = Assembler16(impl.CAVE_START)
-    emit_renderer(asm, alphabet_size, glyph_count)
-    emit_width_hook(asm)
-    asm.label("rank_table")
-    return asm.labels["rank_table"]
+def renderer_rank_table_pointer(ds_exe: bytes) -> tuple[int, int]:
+    """Read the rank-table imm16 used by both Korean rank loads in v41."""
+    image = ds_exe[impl.MZ_HEADER_SIZE:]
+    # Both table loads are near the beginning of the injected renderer. Limit
+    # the scan to code, not the much larger binary glyph payload.
+    start = impl.CAVE_START
+    end = min(len(image), start + 0x400)
+    code = image[start:end]
+    pointers: list[int] = []
+    cursor = 0
+    while True:
+        found = code.find(RANK_LOAD_OPCODE, cursor)
+        if found < 0:
+            break
+        immediate_at = found + len(RANK_LOAD_OPCODE)
+        if immediate_at + 2 <= len(code):
+            pointer = int.from_bytes(code[immediate_at:immediate_at + 2], "little")
+            if impl.CAVE_START <= pointer < impl.CAVE_END:
+                pointers.append(pointer)
+        cursor = found + 1
+    unique = sorted(set(pointers))
+    if len(unique) != 1 or len(pointers) < 2:
+        raise ValueError(
+            "could not resolve one v41 rank-table pointer from renderer code: "
+            f"pointers={[hex(value) for value in pointers]}"
+        )
+    return unique[0], len(pointers)
 
 
 def patch_renderer_rank_decoder_reordered(
@@ -93,6 +114,7 @@ def patch_renderer_rank_decoder_reordered(
     new_codebook: dict[str, tuple[int, int]],
     new_alphabet: list[int],
 ) -> tuple[bytes, dict[str, object]]:
+    del old_misc  # historical ranks come from the published pair assignment
     old_pairs = compatible_codebook_pairs(old_codebook_report)
     old_order = list(old_pairs)
     old_alphabet = recover_dense_rank_alphabet(old_pairs)
@@ -105,9 +127,6 @@ def patch_renderer_rank_decoder_reordered(
             "new v42 codebook contains characters with no embedded v41 glyph: "
             f"added={added[:8]!r}"
         )
-    # Historical codebooks can retain a glyph no current message references.
-    # Keep those records at the unused tail so the fixed-size renderer payload
-    # and its original glyph-count guard remain valid.
     missing_order = [character for character in old_order if character not in new_set]
     embedded_order = new_order + missing_order
 
@@ -121,12 +140,10 @@ def patch_renderer_rank_decoder_reordered(
     cave_start = impl.MZ_HEADER_SIZE + impl.CAVE_START
     cave_end = min(len(data), impl.MZ_HEADER_SIZE + impl.CAVE_END)
 
-    table_runtime_offset = renderer_table_runtime_offset(
-        len(old_alphabet), len(old_order)
-    )
+    table_runtime_offset, pointer_reference_count = renderer_rank_table_pointer(ds_exe)
     table_file_offset = impl.MZ_HEADER_SIZE + table_runtime_offset
     if not cave_start <= table_file_offset < cave_end:
-        raise ValueError("assembled v41 rank-table offset falls outside renderer cave")
+        raise ValueError("v41 machine-code rank-table pointer falls outside renderer cave")
     actual_table = bytes(data[table_file_offset:table_file_offset + 256])
     if actual_table != old_table:
         first_diff = next(
@@ -139,7 +156,7 @@ def patch_renderer_rank_decoder_reordered(
         )
         raise ValueError(
             "v41 inverse-rank table does not match published codebook ranks at "
-            f"assembled offset; first_diff={first_diff!r}, "
+            f"machine-code pointer; first_diff={first_diff!r}, "
             f"actual0={actual_table[:8].hex(' ')}, expected0={old_table[:8].hex(' ')}"
         )
 
@@ -185,6 +202,8 @@ def patch_renderer_rank_decoder_reordered(
         "old_rank_alphabet_source": "published_codebook_dense_pairs",
         "old_rank_alphabet_size": len(old_alphabet),
         "new_rank_alphabet_size": len(new_alphabet),
+        "rank_table_pointer_source": "v41_renderer_machine_code",
+        "rank_table_pointer_reference_count": pointer_reference_count,
         "rank_table_runtime_offset": f"0x{table_runtime_offset:04X}",
         "rank_table_file_offset": f"0x{table_file_offset:X}",
         "alphabet_size_file_offset": f"0x{size_file_offset + 1:X}",
