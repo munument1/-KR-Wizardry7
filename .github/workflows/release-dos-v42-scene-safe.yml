@@ -32,6 +32,22 @@ jobs:
             https://github.com/munument1/-KR-Wizardry7/releases/download/v0.41/Wizardry7_Korean_0.41_roster_record_fix.zip
           echo "34ab9d062206866ce1b2d347d3f6559dd7afcb7a26552b762b957e50d9dd5798  outputs/Wizardry7_Korean_0.41_roster_record_fix.zip" | sha256sum -c -
           unzip -q outputs/Wizardry7_Korean_0.41_roster_record_fix.zip -d outputs/v41_release
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("outputs/v41_release/DSAVANT/korean_codebook.json")
+          data = json.loads(p.read_text(encoding="utf-8"))
+          converted = 0
+          for char, metadata in list(data["codebook"].items()):
+              if isinstance(metadata, str):
+                  data["codebook"][char] = {
+                      "codepoint": f"U+{ord(char):04X}",
+                      "bytes": metadata,
+                  }
+                  converted += 1
+          p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+          print(f"normalized legacy codebook entries: {converted}")
+          PY
       - name: Build v0.42 package
         run: |
           python tools/build_dos_v42_scene_safe.py \
