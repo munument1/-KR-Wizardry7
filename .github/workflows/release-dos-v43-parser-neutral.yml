@@ -1,0 +1,134 @@
+name: Release DOS v0.43 parser-neutral Korean encoding
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/build_dos_v43_parser_neutral.py"
+      - "tests/test_build_dos_v43_parser_neutral.py"
+      - ".github/workflows/release-dos-v43-parser-neutral.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run v43 static tests
+        run: python -m unittest tests.test_build_dos_v43_parser_neutral -v
+
+      - name: Download exact published v0.42 base
+        run: |
+          mkdir -p outputs/v42_release
+          curl -L --fail --retry 3 \
+            -o outputs/Wizardry7_Korean_0.42_scene_safe.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.42/Wizardry7_Korean_0.42_scene_safe.zip
+          echo "bd48e652909bae330049135d83e8efb5b6fb7b2fb3388536c708d808d75883de  outputs/Wizardry7_Korean_0.42_scene_safe.zip" | sha256sum -c -
+          unzip -q outputs/Wizardry7_Korean_0.42_scene_safe.zip -d outputs/v42_release
+
+      - name: Build v0.43 package
+        run: |
+          python tools/build_dos_v43_parser_neutral.py \
+            --v42-dir outputs/v42_release \
+            --output-dir outputs/v43_parser_neutral \
+            --zip-output outputs/Wizardry7_Korean_0.43_parser_neutral.zip \
+            | tee outputs/V43_BUILD_LOG.txt
+          unzip -t outputs/Wizardry7_Korean_0.43_parser_neutral.zip
+          sha256sum outputs/Wizardry7_Korean_0.43_parser_neutral.zip | tee outputs/V43_SHA256.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("outputs/v43_parser_neutral/UI_V43_REPORT.json").read_text(encoding="utf-8"))
+          tx = report["message_transcode"]
+          renderer = report["renderer"]
+          parser_restore = report["parser_restore"]
+
+          assert tx["rank_payload_collisions_before"] > 0
+          assert tx["rank_payload_collisions_after"] == 0
+          assert tx["jan_ette_collisions_before"] > 0
+          assert tx["jan_ette_collisions_after"] == 0
+          assert tx["reserved_rank_ascii"] == " _$^!%&]@#|"
+          assert tx["padded_data_size"] == 262144
+          assert tx["range_split_count"] > 0
+          assert tx["new_declared_range_count"] <= tx["original_declared_range_count"] + tx["original_zero_sentinel_count"]
+          assert tx["remaining_zero_sentinel_count"] >= 0
+          assert renderer["glyph_character_set_preserved"] is True
+          assert renderer["legacy_tail_bytes_preserved"] is True
+          assert set(parser_restore) == {"VBASE.OVR", "VMAZE.OVR", "VPCVW.OVR", "VTREA.OVR"}
+          for item in parser_restore.values():
+              assert item["stock_trailing_restored"] is True
+          print(json.dumps(tx, ensure_ascii=False, indent=2))
+          print(json.dumps(renderer, ensure_ascii=False, indent=2))
+          print(json.dumps(parser_restore, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Upload v0.43 verification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wizardry7-Korean-v0.43-verification
+          path: |
+            outputs/Wizardry7_Korean_0.43_parser_neutral.zip
+            outputs/V43_SHA256.txt
+            outputs/V43_BUILD_LOG.txt
+            outputs/v43_parser_neutral/UI_V43_REPORT.json
+
+      - name: Publish v0.43 test release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > outputs/V43_RELEASE_NOTES.md <<'EOF'
+          ## 위저드리 7 DOS 한글화 0.43 테스트판
+
+          0.42에서도 초반 자네트(Jan-Ette) 이벤트 대신 H'Jenn-Ra/MON42 장면이 나오는 현상이 동일하다는 제보를 받아 원인을 다시 좁혔습니다.
+
+          ### 0.42에서 빠졌던 부분
+
+          0.42는 한글 내부 rank 바이트에서 `! % & ] @ # |`만 제거했습니다. 그러나 실제 DOS 장면 파서는 이외에도 **공백, `_`, `$`, `^`**를 구조적으로 사용합니다. 0.42 자네트 메시지에도 이 네 종류의 값이 한글 내부에 남아 있었습니다.
+
+          ### 0.43 변경
+
+          - 한글 rank에서 장면 파서의 구조 바이트 **11개 전체**를 제외: `SPACE _ $ ^ ! % & ] @ # |`
+          - 실제 ASCII 장면 제어문자는 그대로 보존
+          - 공백까지 제외하면서 늘어난 압축량은 `MSG.HDR` 끝의 기존 빈 sentinel 슬롯 일부를 사용해 몇 개 메시지 범위를 안전하게 분할하여 256 KiB 제한 안에 수용
+          - 모든 메시지 ID와 표시 문자열을 재추출하여 원문 스트림과 동일한지 검증
+          - 한글 내부에 구조 바이트가 전 구간 및 자네트 `29600..29756` 구간 모두 **0개**인지 검증
+          - 이제 특수 파서 우회가 필요 없으므로 VBASE/VMAZE/VPCVW/VTREA의 delimiter/trailing 처리 지점을 원본 방식으로 복구
+          - 0.41의 목록 M/F 수정, 저장/오버레이 안전 수정 등 다른 변경은 유지
+
+          이 버전은 **현장 재현 확인을 위한 테스트 릴리스**입니다.
+
+          ### 테스트할 때 중요
+
+          기존 문제 지점 직전의 저장 파일을 재사용하지 말고, 패치를 덮어쓴 다음 **완전히 새 게임을 시작해서** 초보 던전 방향의 자네트 조우까지 진행해 주세요. 이전 실행에서 이벤트 상태가 저장됐을 가능성을 별도로 배제하기 위해서입니다.
+
+          정상 기대 결과:
+          - 여성 헬라조이드 전사 자네트 등장
+          - H'Jenn-Ra/T'Rang 및 MON42 미등장
+          - 장면 대사 한글 깨짐/노란 블록 없음
+          EOF
+
+          if gh release view v0.43 >/dev/null 2>&1; then
+            gh release edit v0.43 \
+              --title "위저드리 7 DOS 한글화 0.43 테스트판" \
+              --notes-file outputs/V43_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --prerelease
+            gh release upload v0.43 \
+              outputs/Wizardry7_Korean_0.43_parser_neutral.zip \
+              --clobber
+          else
+            gh release create v0.43 \
+              outputs/Wizardry7_Korean_0.43_parser_neutral.zip \
+              --title "위저드리 7 DOS 한글화 0.43 테스트판" \
+              --notes-file outputs/V43_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --prerelease
+          fi
