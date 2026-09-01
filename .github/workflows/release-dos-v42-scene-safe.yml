@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "tools/build_dos_v42_scene_safe.py"
+      - "tools/build_dos_v42_scene_safe_release.py"
       - "tests/test_build_dos_v42_scene_safe.py"
       - ".github/workflows/release-dos-v42-scene-safe.yml"
 
@@ -32,25 +33,9 @@ jobs:
             https://github.com/munument1/-KR-Wizardry7/releases/download/v0.41/Wizardry7_Korean_0.41_roster_record_fix.zip
           echo "34ab9d062206866ce1b2d347d3f6559dd7afcb7a26552b762b957e50d9dd5798  outputs/Wizardry7_Korean_0.41_roster_record_fix.zip" | sha256sum -c -
           unzip -q outputs/Wizardry7_Korean_0.41_roster_record_fix.zip -d outputs/v41_release
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          p = Path("outputs/v41_release/DSAVANT/korean_codebook.json")
-          data = json.loads(p.read_text(encoding="utf-8"))
-          converted = 0
-          for char, metadata in list(data["codebook"].items()):
-              if isinstance(metadata, str):
-                  data["codebook"][char] = {
-                      "codepoint": f"U+{ord(char):04X}",
-                      "bytes": metadata,
-                  }
-                  converted += 1
-          p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-          print(f"normalized legacy codebook entries: {converted}")
-          PY
       - name: Build v0.42 package
         run: |
-          python tools/build_dos_v42_scene_safe.py \
+          python tools/build_dos_v42_scene_safe_release.py \
             --v41-dir outputs/v41_release \
             --output-dir outputs/v42_scene_safe \
             --zip-output outputs/Wizardry7_Korean_0.42_scene_safe.zip \
@@ -62,11 +47,15 @@ jobs:
           from pathlib import Path
           report = json.loads(Path("outputs/v42_scene_safe/UI_V42_REPORT.json").read_text(encoding="utf-8"))
           tx = report["message_transcode"]
+          renderer = report["renderer"]
           assert tx["rank_payload_collisions_before"] > 0
           assert tx["rank_payload_collisions_after"] == 0
           assert tx["jan_ette_collisions_after"] == 0
           assert tx["padded_data_size"] == 262144
+          assert renderer["glyph_table_reordered"] is True
+          assert renderer["glyph_character_set_preserved"] is True
           print(json.dumps(tx, indent=2))
+          print(json.dumps(renderer, indent=2))
           PY
       - name: Upload v0.42 verification artifact
         uses: actions/upload-artifact@v4
@@ -98,8 +87,8 @@ jobs:
           - `! % & ] @ # |`를 한글 rank 바이트로 사용하지 않도록 예약
           - 실제 ASCII 장면 제어문자는 그대로 보존
           - 압축 효율 때문에 공백 `0x20`은 rank에 유지하되, 기존 0.39의 한글 인식 공백 검색 헬퍼로 안전하게 처리
-          - DS.EXE의 역 rank 테이블과 alphabet 크기만 새 코드북에 맞게 갱신
-          - 기존 글리프 순서는 변하지 않아 폰트 비트맵은 그대로 유지
+          - DS.EXE의 역 rank 테이블과 alphabet 크기를 새 코드북에 맞게 갱신
+          - 코드북 문자 순서가 바뀌면 DS.EXE에 이미 들어 있는 38바이트 글리프 레코드도 같은 순서로 재배열
           - 0.41 캐릭터 목록 M/F 경계 수정과 0.39 저장/오버레이 안전 수정 모두 유지
           - 전체 메시지에서 예약된 장면 제어 바이트가 **한글 rank 내부에 0개**인지 빌드 시 검증
           - 자네트 이벤트 메시지 ID `29600..29756`도 별도 회귀 검증
