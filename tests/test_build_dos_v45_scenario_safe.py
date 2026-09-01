@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import unittest
 
@@ -22,8 +23,8 @@ class V45ScenarioSafeTests(unittest.TestCase):
             "f7d31cb5afe492840d75eec8eafc87975867601772cc2290d08ffc77185aaa2f",
         )
         self.assertEqual(
-            v45.V45_CODEBOOK_SHA256,
-            "376d10c1031f1bc7ee125905b72675f14cfae604caa1dacbaf2001b732bce477",
+            v45.TRANSLATION_CSV_SHA256,
+            "32322efbf5ccd647e2696a5f029c4098c1ea0427679b3527fdd9aa36832785ae",
         )
 
     def test_v44_event_state_fix_is_required_base(self) -> None:
@@ -31,6 +32,16 @@ class V45ScenarioSafeTests(unittest.TestCase):
             v45.V44_VBASE_SHA256,
             "99fa1b3188cfb3585061ddbe34f136b57939b98250daacb4cec8146cd54db464",
         )
+
+    def test_codebook_annotation_records_safe_encoding(self) -> None:
+        source = json.dumps({"codebook": {"가": {"bytes": "01 02"}}}, ensure_ascii=False).encode()
+        result = json.loads(v45.annotate_codebook(source))
+        scenario = result["scenario_compact"]
+        self.assertEqual(scenario["translated_item_fields"], 568)
+        self.assertEqual(scenario["translated_monster_fields"], 1000)
+        self.assertEqual(scenario["safe_pair_encoding"]["lead_range"], "F0-F8")
+        self.assertEqual(scenario["safe_pair_encoding"]["item_escape_0x17_fields"], 0)
+        self.assertEqual(scenario["safe_pair_encoding"]["monster_escape_0x17_fields"], 0)
 
     def test_hash_guard_rejects_wrong_data(self) -> None:
         with self.assertRaises(ValueError):
