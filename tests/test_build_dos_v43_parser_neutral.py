@@ -1,0 +1,75 @@
+import unittest
+
+from extract_gold_messages import RangeEntry
+from tools import build_dos_v43_parser_neutral as v43
+
+
+class DummyRecord:
+    def __init__(self, range_index: int, message_id: int):
+        self.range_index = range_index
+        self.message_id = message_id
+
+
+class ParserNeutralV43Tests(unittest.TestCase):
+    def test_reserved_set_covers_every_known_parser_token(self):
+        self.assertEqual(v43.FULL_PARSER_RESERVED, b" _$^!%&]@#|")
+        self.assertEqual(
+            v43.FULL_PARSER_RESERVED_SET,
+            frozenset(b" _$^!%&]@#|"),
+        )
+
+    def test_rank_alphabet_filters_all_structural_bytes(self):
+        # Shorter Huffman codes sort first; the exact order is unimportant here.
+        codes = {value: (0,) for value in range(0x20, 0x7F)}
+        codes[v43.DEFAULT_ESCAPE] = (1,)
+        alphabet = v43.parser_neutral_rank_alphabet(codes)
+        self.assertNotIn(v43.DEFAULT_ESCAPE, alphabet)
+        for token in v43.FULL_PARSER_RESERVED:
+            self.assertNotIn(token, alphabet)
+        self.assertIn(ord("A"), alphabet)
+
+    def test_collision_counter_ignores_literal_controls(self):
+        raw = b"A_$^!%&]@#|" + bytes(
+            [v43.DEFAULT_ESCAPE, ord("_"), ord("$")]
+        ) + b"Z"
+        counts = v43.rank_payload_token_counts(raw)
+        self.assertEqual(counts[ord("_")], 1)
+        self.assertEqual(counts[ord("$")], 1)
+        self.assertEqual(sum(counts.values()), 2)
+
+    def test_collision_counter_skips_literal_escape(self):
+        raw = bytes(
+            [v43.DEFAULT_ESCAPE, v43.DEFAULT_ESCAPE]
+        ) + bytes([v43.DEFAULT_ESCAPE, ord("A"), ord("B")])
+        self.assertEqual(sum(v43.rank_payload_token_counts(raw).values()), 0)
+
+    def test_padding_split_can_recover_bank_tail(self):
+        # First range consumes 900 bytes.  The second 200-byte range would move
+        # wholly to the next bank.  Splitting it 100/100 lets the first half use
+        # the 124-byte tail and reduces the final layout by 124 bytes.
+        entries = [
+            RangeEntry(0, 100, 0, 0, 0),
+            RangeEntry(1, 200, 0, 1, 0),
+        ]
+        records = [DummyRecord(0, 100), DummyRecord(1, 200), DummyRecord(1, 201)]
+        packed = {
+            100: bytes(899),  # record byte + payload = 900
+            200: bytes(99),   # 100
+            201: bytes(99),   # 100
+        }
+        initial = v43._initial_segments(entries, records)
+        self.assertEqual(v43._layout_size(initial, packed), 1224)
+        split = [initial[0], (1, (200,)), (1, (201,))]
+        self.assertEqual(v43._layout_size(split, packed), 1100)
+        data, out_entries, padding = v43.pack_segments(split, packed)
+        self.assertEqual(len(data), 1100)
+        self.assertEqual(padding, 0)
+        self.assertEqual([(e.start_id, e.id_span) for e in out_entries], [(100, 0), (200, 0), (201, 0)])
+
+    def test_jan_ette_regression_range_is_pinned(self):
+        self.assertEqual(v43.JAN_ETTE_MESSAGE_RANGE.start, 29600)
+        self.assertEqual(v43.JAN_ETTE_MESSAGE_RANGE.stop - 1, 29756)
+
+
+if __name__ == "__main__":
+    unittest.main()
