@@ -11,6 +11,8 @@ This wrapper makes the migration robust:
 
 * accept both legacy ``char: "AA BB"`` and modern metadata codebooks;
 * allow the new safe codebook to choose a different character order;
+* locate the v41 rank/glyph tables from the renderer's assembled layout rather
+  than searching a large binary cave for a 256-byte value sequence;
 * reorder the already embedded 38-byte glyph records in DS.EXE to the new
   Unicode order, instead of regenerating any font bitmap;
 * retain any legacy glyph that is no longer referenced at the unused tail;
@@ -25,6 +27,7 @@ from typing import Any
 
 import build_dos_v42_scene_safe as impl
 from build_dos_messages import DEFAULT_ESCAPE, huffman_codes
+from patch_dos_korean_renderer import Assembler16, emit_renderer, emit_width_hook
 
 
 GLYPH_RECORD_SIZE = 38
@@ -48,6 +51,15 @@ def compatible_codebook_pairs(report: dict[str, object]) -> dict[str, tuple[int,
     return result
 
 
+def renderer_table_runtime_offset(alphabet_size: int, glyph_count: int) -> int:
+    """Recreate only the code layout to resolve the rank-table label."""
+    asm = Assembler16(impl.CAVE_START)
+    emit_renderer(asm, alphabet_size, glyph_count)
+    emit_width_hook(asm)
+    asm.label("rank_table")
+    return asm.labels["rank_table"]
+
+
 def patch_renderer_rank_decoder_reordered(
     ds_exe: bytes,
     old_misc: bytes,
@@ -68,7 +80,7 @@ def patch_renderer_rank_decoder_reordered(
             f"added={added[:8]!r}"
         )
     # A historical codebook can contain a glyph that later message patches no
-    # longer reference.  Keep such records after the active v42 glyphs so the
+    # longer reference. Keep such records after the active v42 glyphs so the
     # fixed-size renderer payload and its old glyph-count guard remain valid.
     missing_order = [character for character in old_order if character not in new_set]
     embedded_order = new_order + missing_order
@@ -87,12 +99,27 @@ def patch_renderer_rank_decoder_reordered(
     data = bytearray(ds_exe)
     cave_start = impl.MZ_HEADER_SIZE + impl.CAVE_START
     cave_end = min(len(data), impl.MZ_HEADER_SIZE + impl.CAVE_END)
-    cave = bytes(data[cave_start:cave_end])
 
-    table_at = cave.find(old_table)
-    if table_at < 0 or cave.find(old_table, table_at + 1) >= 0:
-        raise ValueError("expected exactly one v41 renderer rank table in DS.EXE cave")
-    table_file_offset = cave_start + table_at
+    table_runtime_offset = renderer_table_runtime_offset(
+        len(old_alphabet), len(old_order)
+    )
+    table_file_offset = impl.MZ_HEADER_SIZE + table_runtime_offset
+    if not cave_start <= table_file_offset < cave_end:
+        raise ValueError("assembled v41 rank-table offset falls outside renderer cave")
+    actual_table = bytes(data[table_file_offset:table_file_offset + 256])
+    if actual_table != old_table:
+        first_diff = next(
+            (
+                index
+                for index, (actual, expected) in enumerate(zip(actual_table, old_table))
+                if actual != expected
+            ),
+            None,
+        )
+        raise ValueError(
+            "v41 inverse-rank table does not match MISC.HDR at assembled offset; "
+            f"first_diff={first_diff!r}"
+        )
 
     glyph_file_offset = table_file_offset + 256
     glyph_bytes = len(old_order) * GLYPH_RECORD_SIZE
@@ -122,10 +149,10 @@ def patch_renderer_rank_decoder_reordered(
     new_size_pattern = (
         b"\xB9" + len(new_alphabet).to_bytes(2, "little") + b"\xF7\xE1"
     )
-    cave = bytes(data[cave_start:cave_end])
-    size_at = cave.find(old_size_pattern)
-    if size_at < 0 or cave.find(old_size_pattern, size_at + 1) >= 0:
-        raise ValueError("expected exactly one renderer alphabet-size multiply in DS.EXE cave")
+    code_region = bytes(data[cave_start:table_file_offset])
+    size_at = code_region.find(old_size_pattern)
+    if size_at < 0 or code_region.find(old_size_pattern, size_at + 1) >= 0:
+        raise ValueError("expected exactly one renderer alphabet-size multiply before rank table")
     size_file_offset = cave_start + size_at
     data[size_file_offset:size_file_offset + len(old_size_pattern)] = new_size_pattern
 
@@ -135,6 +162,7 @@ def patch_renderer_rank_decoder_reordered(
     return bytes(data), {
         "old_rank_alphabet_size": len(old_alphabet),
         "new_rank_alphabet_size": len(new_alphabet),
+        "rank_table_runtime_offset": f"0x{table_runtime_offset:04X}",
         "rank_table_file_offset": f"0x{table_file_offset:X}",
         "alphabet_size_file_offset": f"0x{size_file_offset + 1:X}",
         "glyph_table_file_offset": f"0x{glyph_file_offset:X}",
@@ -148,7 +176,7 @@ def patch_renderer_rank_decoder_reordered(
     }
 
 
-# Patch the implementation before entering its normal build pipeline.  This
+# Patch the implementation before entering its normal build pipeline. This
 # keeps all message/Huffman/range audits in one place while making the legacy
 # v41 -> v42 renderer migration correct.
 impl._codebook_pairs_from_report = compatible_codebook_pairs
