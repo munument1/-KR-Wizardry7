@@ -13,6 +13,7 @@ This wrapper makes the migration robust:
 * allow the new safe codebook to choose a different character order;
 * reorder the already embedded 38-byte glyph records in DS.EXE to the new
   Unicode order, instead of regenerating any font bitmap;
+* retain any legacy glyph that is no longer referenced at the unused tail;
 * then update the inverse-rank table and rank-alphabet size as v42 intended.
 
 No executable code is relocated and DS.EXE keeps the same byte size.
@@ -58,13 +59,19 @@ def patch_renderer_rank_decoder_reordered(
     old_pairs = compatible_codebook_pairs(old_codebook_report)
     old_order = list(old_pairs)
     new_order = list(new_codebook)
-    if set(old_order) != set(new_order):
-        missing = sorted(set(old_order) - set(new_order))
-        added = sorted(set(new_order) - set(old_order))
+    old_set = set(old_order)
+    new_set = set(new_order)
+    added = sorted(new_set - old_set)
+    if added:
         raise ValueError(
-            "Unicode codebook character set changed; cannot reuse glyph table: "
-            f"missing={missing[:8]!r}, added={added[:8]!r}"
+            "new v42 codebook contains characters with no embedded v41 glyph: "
+            f"added={added[:8]!r}"
         )
+    # A historical codebook can contain a glyph that later message patches no
+    # longer reference.  Keep such records after the active v42 glyphs so the
+    # fixed-size renderer payload and its old glyph-count guard remain valid.
+    missing_order = [character for character in old_order if character not in new_set]
+    embedded_order = new_order + missing_order
 
     old_codes = huffman_codes(old_misc)
     old_alphabet = sorted(
@@ -102,7 +109,7 @@ def patch_renderer_rank_decoder_reordered(
             old_index[character] * GLYPH_RECORD_SIZE:
             (old_index[character] + 1) * GLYPH_RECORD_SIZE
         ]
-        for character in new_order
+        for character in embedded_order
     )
     if len(reordered) != len(old_glyphs):
         raise AssertionError("glyph reorder changed the renderer payload size")
@@ -132,10 +139,12 @@ def patch_renderer_rank_decoder_reordered(
         "alphabet_size_file_offset": f"0x{size_file_offset + 1:X}",
         "glyph_table_file_offset": f"0x{glyph_file_offset:X}",
         "glyph_record_size": GLYPH_RECORD_SIZE,
-        "glyph_record_count": len(new_order),
-        "glyph_order_changed": old_order != new_order,
+        "active_glyph_record_count": len(new_order),
+        "embedded_glyph_record_count": len(embedded_order),
+        "unused_legacy_glyphs": missing_order,
+        "glyph_order_changed": old_order != embedded_order,
         "glyph_table_reordered": True,
-        "glyph_character_set_preserved": True,
+        "glyph_character_set_preserved": set(embedded_order) == old_set,
     }
 
 
