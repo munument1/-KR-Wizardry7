@@ -1,0 +1,165 @@
+name: Release DOS v0.45 SCENARIO Korean names
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/build_dos_v45_scenario_safe.py"
+      - "tests/test_build_dos_v45_scenario_safe.py"
+      - "release_assets/v45/**"
+      - "docs/V45_SCENARIO_SAFE_ENCODING.md"
+      - ".github/workflows/release-dos-v45-scenario-safe.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run v0.45 static tests
+        run: python -m unittest tests.test_build_dos_v45_scenario_safe -v
+
+      - name: Download exact published v0.44 base
+        run: |
+          mkdir -p outputs/v44_release
+          curl -L --fail --retry 3 \
+            -o outputs/Wizardry7_Korean_0.44_event_state_fix.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.44/Wizardry7_Korean_0.44_event_state_fix.zip
+          echo "9e1b27e2ebc617a0b4400d656b548fa4d7cd65d9f1df23852ad8b82df1702c1d  outputs/Wizardry7_Korean_0.44_event_state_fix.zip" | sha256sum -c -
+          unzip -q outputs/Wizardry7_Korean_0.44_event_state_fix.zip -d outputs/v44_release
+
+      - name: Decode verified v0.45 runtime assets
+        run: |
+          mkdir -p outputs/v45_assets
+          cat release_assets/v45/SCENARIO.DBS.xz.b64.part{01..13} \
+            | base64 -d \
+            | xz -d \
+            > outputs/v45_assets/SCENARIO.DBS
+          base64 -d release_assets/v45/VBFONT0.VGA.gz.b64 \
+            | gzip -d \
+            > outputs/v45_assets/VBFONT0.VGA
+          echo "8ff513e0469dd12b8b175c7a99b43029eba5b04f70b7794627cc644e1fe34875  outputs/v45_assets/SCENARIO.DBS" | sha256sum -c -
+          echo "f7d31cb5afe492840d75eec8eafc87975867601772cc2290d08ffc77185aaa2f  outputs/v45_assets/VBFONT0.VGA" | sha256sum -c -
+
+      - name: Build v0.45 package
+        run: |
+          python tools/build_dos_v45_scenario_safe.py \
+            --v44-dir outputs/v44_release \
+            --scenario outputs/v45_assets/SCENARIO.DBS \
+            --vbfont outputs/v45_assets/VBFONT0.VGA \
+            --output-dir outputs/v45_scenario_safe \
+            --zip-output outputs/Wizardry7_Korean_0.45_scenario_safe.zip \
+            | tee outputs/V45_BUILD_LOG.txt
+          unzip -t outputs/Wizardry7_Korean_0.45_scenario_safe.zip
+          echo "c619cb206ab03c27e4d163881ef7425f98b6dc3ccf1ad20b35c7fd45a9b72ab9  outputs/Wizardry7_Korean_0.45_scenario_safe.zip" | sha256sum -c -
+          sha256sum outputs/Wizardry7_Korean_0.45_scenario_safe.zip | tee outputs/V45_SHA256.txt
+
+      - name: Verify SCENARIO fixed-width slots
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path("outputs/v45_scenario_safe")
+          data = (root / "DSAVANT/SCENARIO.DBS").read_bytes()
+          font = (root / "DSAVANT/VBFONT0.VGA").read_bytes()
+          vbase = (root / "DSAVANT/VBASE.OVR").read_bytes()
+          report = json.loads((root / "UI_V45_REPORT.json").read_text(encoding="utf-8"))
+
+          assert hashlib.sha256(data).hexdigest() == "8ff513e0469dd12b8b175c7a99b43029eba5b04f70b7794627cc644e1fe34875"
+          assert hashlib.sha256(font).hexdigest() == "f7d31cb5afe492840d75eec8eafc87975867601772cc2290d08ffc77185aaa2f"
+          assert hashlib.sha256(vbase).hexdigest() == "99fa1b3188cfb3585061ddbe34f136b57939b98250daacb4cec8146cd54db464"
+
+          item_slots = 0
+          for index in range(600):
+              offset = 0x0380 + index * 0x48
+              slot = data[offset:offset + 16].split(b"\x00", 1)[0]
+              assert len(slot) <= 16
+              assert 0x17 not in slot
+              item_slots += bool(slot)
+
+          monster_slots = 0
+          for index in range(250):
+              base = 0x37040 + index * 0xE8
+              for variant in range(4):
+                  offset = base + variant * 16
+                  slot = data[offset:offset + 16].split(b"\x00", 1)[0]
+                  assert len(slot) <= 16
+                  assert 0x17 not in slot
+                  monster_slots += bool(slot)
+
+          assert item_slots == 568
+          assert monster_slots == 1000
+          assert report["scenario"]["translated_item_fields"] == 568
+          assert report["scenario"]["translated_monster_fields"] == 1000
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Upload v0.45 verification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wizardry7-Korean-v0.45-verification
+          path: |
+            outputs/Wizardry7_Korean_0.45_scenario_safe.zip
+            outputs/V45_SHA256.txt
+            outputs/V45_BUILD_LOG.txt
+            outputs/v45_scenario_safe/UI_V45_REPORT.json
+
+      - name: Publish v0.45 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > outputs/V45_RELEASE_NOTES.md <<'EOF'
+          ## 위저드리 7 DOS 한글화 0.45
+
+          `SCENARIO.DBS`의 **아이템 이름과 몬스터 이름 한글화**를 정식으로 포함합니다.
+
+          ### 0.45 변경
+
+          - 아이템 이름 568개 한글화
+          - 몬스터 이름 1,000개 슬롯 한글화
+          - 16바이트 고정폭 이름에서 일부 글자가 `?`로 변환되던 문제 수정
+          - SCENARIO 전용 안전 인코딩 적용
+            - 자주 쓰는 한글: 1바이트 직접 코드
+            - 나머지 한글: `F0..F8 + 80..FF` 2바이트 코드
+            - 아이템/몬스터 번역 슬롯의 `0x17` escape 사용 0개
+          - 실제 게임에서 아이템 및 몬스터 이름 정상 출력 확인
+          - v0.44의 자네트(Jan-Ette) 이벤트 상태 수정 유지
+
+          ### 검증
+
+          릴리스 빌드는 v0.44 공개 ZIP과 실제 테스트가 끝난 `SCENARIO.DBS`,
+          `VBFONT0.VGA`의 SHA-256을 검증한 뒤 패키징합니다. 아이템 568개와 몬스터
+          이름 슬롯 1,000개 모두 16바이트 제한 및 `0x17` 미사용 조건을 자동 검사합니다.
+
+          ### 설치
+
+          기존 게임 폴더를 백업한 뒤 ZIP 안의 `DSAVANT` 폴더를 GOG 위저드리 7
+          설치 폴더에 덮어쓰십시오.
+          EOF
+
+          if gh release view v0.45 >/dev/null 2>&1; then
+            gh release edit v0.45 \
+              --title "위저드리 7 DOS 한글화 0.45" \
+              --notes-file outputs/V45_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --latest
+            gh release upload v0.45 \
+              outputs/Wizardry7_Korean_0.45_scenario_safe.zip \
+              --clobber
+          else
+            gh release create v0.45 \
+              outputs/Wizardry7_Korean_0.45_scenario_safe.zip \
+              --title "위저드리 7 DOS 한글화 0.45" \
+              --notes-file outputs/V45_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --latest
+          fi
