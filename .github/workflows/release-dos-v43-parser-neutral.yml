@@ -58,8 +58,9 @@ jobs:
           assert tx["jan_ette_collisions_before"] > 0
           assert tx["jan_ette_collisions_after"] == 0
           assert tx["reserved_rank_ascii"] == " _$^!%&]@#|"
+          assert tx["used_data_bytes"] <= 262144
           assert tx["padded_data_size"] == 262144
-          assert tx["range_split_count"] > 0
+          assert tx["range_split_count"] >= 0
           assert tx["new_declared_range_count"] <= tx["original_declared_range_count"] + tx["original_zero_sentinel_count"]
           assert tx["remaining_zero_sentinel_count"] >= 0
           assert renderer["glyph_character_set_preserved"] is True
@@ -99,9 +100,9 @@ jobs:
 
           - 한글 rank에서 장면 파서의 구조 바이트 **11개 전체**를 제외: `SPACE _ $ ^ ! % & ] @ # |`
           - 실제 ASCII 장면 제어문자는 그대로 보존
-          - 공백까지 제외하면서 늘어난 압축량은 `MSG.HDR` 끝의 기존 빈 sentinel 슬롯 일부를 사용해 몇 개 메시지 범위를 안전하게 분할하여 256 KiB 제한 안에 수용
           - 모든 메시지 ID와 표시 문자열을 재추출하여 원문 스트림과 동일한지 검증
           - 한글 내부에 구조 바이트가 전 구간 및 자네트 `29600..29756` 구간 모두 **0개**인지 검증
+          - 공백까지 제외했지만 현재 빌드는 `259,377`바이트로 `MSG.DBS` 256 KiB 제한 안에 분할 없이 들어갑니다. 향후 필요할 경우에만 기존 `MSG.HDR` 빈 sentinel 슬롯을 이용해 범위를 안전하게 분할할 수 있도록 패커도 보강했습니다.
           - 이제 특수 파서 우회가 필요 없으므로 VBASE/VMAZE/VPCVW/VTREA의 delimiter/trailing 처리 지점을 원본 방식으로 복구
           - 0.41의 목록 M/F 수정, 저장/오버레이 안전 수정 등 다른 변경은 유지
 
