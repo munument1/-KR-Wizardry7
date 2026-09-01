@@ -1,7 +1,15 @@
-import unittest
+from __future__ import annotations
 
-from extract_gold_messages import RangeEntry
-from tools import build_dos_v43_parser_neutral as v43
+import sys
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+
+import build_dos_v43_parser_neutral as v43  # noqa: E402
+from extract_gold_messages import RangeEntry  # noqa: E402
 
 
 class DummyRecord:
@@ -19,7 +27,6 @@ class ParserNeutralV43Tests(unittest.TestCase):
         )
 
     def test_rank_alphabet_filters_all_structural_bytes(self):
-        # Shorter Huffman codes sort first; the exact order is unimportant here.
         codes = {value: (0,) for value in range(0x20, 0x7F)}
         codes[v43.DEFAULT_ESCAPE] = (1,)
         alphabet = v43.parser_neutral_rank_alphabet(codes)
@@ -44,9 +51,6 @@ class ParserNeutralV43Tests(unittest.TestCase):
         self.assertEqual(sum(v43.rank_payload_token_counts(raw).values()), 0)
 
     def test_padding_split_can_recover_bank_tail(self):
-        # First range consumes 900 bytes.  The second 200-byte range would move
-        # wholly to the next bank.  Splitting it 100/100 lets the first half use
-        # the 124-byte tail and reduces the final layout by 124 bytes.
         entries = [
             RangeEntry(0, 100, 0, 0, 0),
             RangeEntry(1, 200, 0, 1, 0),
@@ -64,7 +68,10 @@ class ParserNeutralV43Tests(unittest.TestCase):
         data, out_entries, padding = v43.pack_segments(split, packed)
         self.assertEqual(len(data), 1100)
         self.assertEqual(padding, 0)
-        self.assertEqual([(e.start_id, e.id_span) for e in out_entries], [(100, 0), (200, 0), (201, 0)])
+        self.assertEqual(
+            [(entry.start_id, entry.id_span) for entry in out_entries],
+            [(100, 0), (200, 0), (201, 0)],
+        )
 
     def test_jan_ette_regression_range_is_pinned(self):
         self.assertEqual(v43.JAN_ETTE_MESSAGE_RANGE.start, 29600)
