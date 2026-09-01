@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Release entry point for the v42 scene-safe Korean transcoder.
+
+The first v42 implementation correctly removed scene-control values from rank
+payloads, but it assumed that rebuilding the codebook would keep exactly the
+same Unicode order as v41.  The published v41 codebook is a legacy char->pair
+mapping and its historical order is not guaranteed to match a fresh frequency
+sort.
+
+This wrapper makes the migration robust:
+
+* accept both legacy ``char: "AA BB"`` and modern metadata codebooks;
+* allow the new safe codebook to choose a different character order;
+* reorder the already embedded 38-byte glyph records in DS.EXE to the new
+  Unicode order, instead of regenerating any font bitmap;
+* then update the inverse-rank table and rank-alphabet size as v42 intended.
+
+No executable code is relocated and DS.EXE keeps the same byte size.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import build_dos_v42_scene_safe as impl
+from build_dos_messages import DEFAULT_ESCAPE, huffman_codes
+
+
+GLYPH_RECORD_SIZE = 38
+
+
+def compatible_codebook_pairs(report: dict[str, object]) -> dict[str, tuple[int, int]]:
+    raw = report.get("codebook")
+    if not isinstance(raw, dict):
+        raise ValueError("korean_codebook.json has no codebook object")
+    result: dict[str, tuple[int, int]] = {}
+    for character, metadata in raw.items():
+        if not isinstance(character, str):
+            raise ValueError("invalid codebook character key")
+        encoded: Any = metadata.get("bytes") if isinstance(metadata, dict) else metadata
+        if not isinstance(encoded, str):
+            raise ValueError(f"codebook entry {character!r} has no byte pair")
+        parts = encoded.split()
+        if len(parts) != 2:
+            raise ValueError(f"codebook entry {character!r} is not a two-byte pair")
+        result[character] = (int(parts[0], 16), int(parts[1], 16))
+    return result
+
+
+def patch_renderer_rank_decoder_reordered(
+    ds_exe: bytes,
+    old_misc: bytes,
+    old_codebook_report: dict[str, object],
+    new_misc: bytes,
+    new_codebook: dict[str, tuple[int, int]],
+    new_alphabet: list[int],
+) -> tuple[bytes, dict[str, object]]:
+    old_pairs = compatible_codebook_pairs(old_codebook_report)
+    old_order = list(old_pairs)
+    new_order = list(new_codebook)
+    if set(old_order) != set(new_order):
+        missing = sorted(set(old_order) - set(new_order))
+        added = sorted(set(new_order) - set(old_order))
+        raise ValueError(
+            "Unicode codebook character set changed; cannot reuse glyph table: "
+            f"missing={missing[:8]!r}, added={added[:8]!r}"
+        )
+
+    old_codes = huffman_codes(old_misc)
+    old_alphabet = sorted(
+        (value for value in old_codes if value != DEFAULT_ESCAPE),
+        key=lambda value: (len(old_codes[value]), value),
+    )
+    converged_alphabet = impl.safe_rank_alphabet(huffman_codes(new_misc))
+    if converged_alphabet != new_alphabet:
+        raise ValueError("safe rank alphabet did not converge with final MISC.HDR")
+
+    old_table = impl._rank_table(old_alphabet)
+    new_table = impl._rank_table(new_alphabet)
+    data = bytearray(ds_exe)
+    cave_start = impl.MZ_HEADER_SIZE + impl.CAVE_START
+    cave_end = min(len(data), impl.MZ_HEADER_SIZE + impl.CAVE_END)
+    cave = bytes(data[cave_start:cave_end])
+
+    table_at = cave.find(old_table)
+    if table_at < 0 or cave.find(old_table, table_at + 1) >= 0:
+        raise ValueError("expected exactly one v41 renderer rank table in DS.EXE cave")
+    table_file_offset = cave_start + table_at
+
+    glyph_file_offset = table_file_offset + 256
+    glyph_bytes = len(old_order) * GLYPH_RECORD_SIZE
+    glyph_end = glyph_file_offset + glyph_bytes
+    if glyph_end > cave_end:
+        raise ValueError("embedded glyph table extends outside the verified renderer cave")
+    old_glyphs = bytes(data[glyph_file_offset:glyph_end])
+    if len(old_glyphs) != glyph_bytes:
+        raise ValueError("embedded glyph table is truncated")
+
+    old_index = {character: index for index, character in enumerate(old_order)}
+    reordered = b"".join(
+        old_glyphs[
+            old_index[character] * GLYPH_RECORD_SIZE:
+            (old_index[character] + 1) * GLYPH_RECORD_SIZE
+        ]
+        for character in new_order
+    )
+    if len(reordered) != len(old_glyphs):
+        raise AssertionError("glyph reorder changed the renderer payload size")
+    data[glyph_file_offset:glyph_end] = reordered
+    data[table_file_offset:table_file_offset + 256] = new_table
+
+    old_size_pattern = (
+        b"\xB9" + len(old_alphabet).to_bytes(2, "little") + b"\xF7\xE1"
+    )
+    new_size_pattern = (
+        b"\xB9" + len(new_alphabet).to_bytes(2, "little") + b"\xF7\xE1"
+    )
+    cave = bytes(data[cave_start:cave_end])
+    size_at = cave.find(old_size_pattern)
+    if size_at < 0 or cave.find(old_size_pattern, size_at + 1) >= 0:
+        raise ValueError("expected exactly one renderer alphabet-size multiply in DS.EXE cave")
+    size_file_offset = cave_start + size_at
+    data[size_file_offset:size_file_offset + len(old_size_pattern)] = new_size_pattern
+
+    if len(data) != len(ds_exe):
+        raise AssertionError("v42 renderer migration changed DS.EXE size")
+
+    return bytes(data), {
+        "old_rank_alphabet_size": len(old_alphabet),
+        "new_rank_alphabet_size": len(new_alphabet),
+        "rank_table_file_offset": f"0x{table_file_offset:X}",
+        "alphabet_size_file_offset": f"0x{size_file_offset + 1:X}",
+        "glyph_table_file_offset": f"0x{glyph_file_offset:X}",
+        "glyph_record_size": GLYPH_RECORD_SIZE,
+        "glyph_record_count": len(new_order),
+        "glyph_order_changed": old_order != new_order,
+        "glyph_table_reordered": True,
+        "glyph_character_set_preserved": True,
+    }
+
+
+# Patch the implementation before entering its normal build pipeline.  This
+# keeps all message/Huffman/range audits in one place while making the legacy
+# v41 -> v42 renderer migration correct.
+impl._codebook_pairs_from_report = compatible_codebook_pairs
+impl.patch_renderer_rank_decoder = patch_renderer_rank_decoder_reordered
+
+
+if __name__ == "__main__":
+    raise SystemExit(impl.main())
