@@ -11,8 +11,10 @@ SCENARIO-specific compact encoding:
 * remaining Hangul syllables use F0..F8 + 80..FF safe two-byte pairs;
 * translated item/monster slots contain no 0x17 escape bytes.
 
-The SCENARIO/VBFONT/codebook assets supplied to this builder are the exact
-runtime-tested v0.45 assets. All other v0.44 payload bytes are preserved.
+The SCENARIO/VBFONT assets supplied to this builder are the exact runtime-tested
+v0.45 assets. All other v0.44 runtime payload bytes are preserved. The existing
+codebook JSON is retained and annotated with SCENARIO metadata only; it is not
+consumed by the game at runtime.
 """
 
 from __future__ import annotations
@@ -27,7 +29,8 @@ V44_ZIP_SHA256 = "9e1b27e2ebc617a0b4400d656b548fa4d7cd65d9f1df23852ad8b82df1702c
 V44_VBASE_SHA256 = "99fa1b3188cfb3585061ddbe34f136b57939b98250daacb4cec8146cd54db464"
 V45_SCENARIO_SHA256 = "8ff513e0469dd12b8b175c7a99b43029eba5b04f70b7794627cc644e1fe34875"
 V45_VBFONT_SHA256 = "f7d31cb5afe492840d75eec8eafc87975867601772cc2290d08ffc77185aaa2f"
-V45_CODEBOOK_SHA256 = "376d10c1031f1bc7ee125905b72675f14cfae604caa1dacbaf2001b732bce477"
+TRANSLATION_CSV_SHA256 = "32322efbf5ccd647e2696a5f029c4098c1ea0427679b3527fdd9aa36832785ae"
+ORIGINAL_SCENARIO_SHA256 = "b2cb0722122724d35d379bb10250d0eec51238d9b147c36be12177ef3d2462f6"
 
 
 def sha256(data: bytes) -> str:
@@ -52,12 +55,36 @@ def write_deterministic_zip(path: Path, payloads: dict[str, bytes]) -> None:
             archive.writestr(info, payloads[name])
 
 
+def annotate_codebook(raw: bytes) -> bytes:
+    metadata = json.loads(raw.decode("utf-8"))
+    metadata["scenario_compact"] = {
+        "format": (
+            "SCENARIO fixed-width names: common Hangul uses 1-byte direct codes; "
+            "all other Hangul uses F0..F8 + 80..FF safe pairs; "
+            "no ESC+rank+rank in item/monster names"
+        ),
+        "translated_fields": 1568,
+        "translated_item_fields": 568,
+        "translated_monster_fields": 1000,
+        "field_capacity_bytes": 16,
+        "source_scenario_sha256": ORIGINAL_SCENARIO_SHA256,
+        "patched_scenario_sha256": V45_SCENARIO_SHA256,
+        "safe_pair_encoding": {
+            "lead_range": "F0-F8",
+            "trail_range": "80-FF",
+            "glyph_index_formula": "(lead - F0) * 128 + (trail - 80)",
+            "item_escape_0x17_fields": 0,
+            "monster_escape_0x17_fields": 0,
+        },
+    }
+    return json.dumps(metadata, ensure_ascii=False, indent=2).encode("utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--v44-dir", type=Path, required=True)
     parser.add_argument("--scenario", type=Path, required=True)
     parser.add_argument("--vbfont", type=Path, required=True)
-    parser.add_argument("--codebook", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--zip-output", type=Path, required=True)
     args = parser.parse_args()
@@ -70,13 +97,10 @@ def main() -> int:
 
     scenario = args.scenario.read_bytes()
     vbfont = args.vbfont.read_bytes()
-    codebook = args.codebook.read_bytes()
     require_hash("v0.45 SCENARIO.DBS", scenario, V45_SCENARIO_SHA256)
     require_hash("v0.45 VBFONT0.VGA", vbfont, V45_VBFONT_SHA256)
-    require_hash("v0.45 korean_codebook.json", codebook, V45_CODEBOOK_SHA256)
 
     payloads: dict[str, bytes] = {}
-    inherited: dict[str, str] = {}
     for path in sorted(args.v44_dir.iterdir()):
         if path.is_file() and path.name.startswith("UI_V44_"):
             payloads[path.name] = path.read_bytes()
@@ -87,9 +111,7 @@ def main() -> int:
         if path.name == "VBFONT0.VGA":
             data = vbfont
         elif path.name == "korean_codebook.json":
-            data = codebook
-        else:
-            inherited[path.name] = sha256(data)
+            data = annotate_codebook(data)
         payloads[f"DSAVANT/{path.name}"] = data
 
     vbase = payloads.get("DSAVANT/VBASE.OVR")
@@ -104,8 +126,8 @@ def main() -> int:
         "base_release": "v0.44",
         "runtime_confirmation": {
             "jan_ette_encounter": "normal after v0.44 event-state fix",
-            "item_names": "tested normal after safe-pair conversion",
-            "monster_names": "tested normal with the same safe encoding",
+            "item_names": "tester confirmed normal after safe-pair conversion",
+            "monster_names": "tester confirmed normal with the same safe encoding",
         },
         "scenario": {
             "file": "SCENARIO.DBS",
@@ -122,12 +144,8 @@ def main() -> int:
             "other_hangul": "F0..F8 + 80..FF safe pair",
             "legacy_escape_in_scenario_names": "not used",
         },
-        "renderer": {
-            "file": "VBFONT0.VGA",
-            "sha256": sha256(vbfont),
-            "codebook_sha256": sha256(codebook),
-        },
-        "inherited_payload_count": len(inherited),
+        "renderer": {"file": "VBFONT0.VGA", "sha256": sha256(vbfont)},
+        "translation_csv": {"sha256": TRANSLATION_CSV_SHA256},
         "payloads": {
             name: {"size": len(data), "sha256": sha256(data)}
             for name, data in sorted(payloads.items())
