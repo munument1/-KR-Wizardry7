@@ -51,28 +51,33 @@ class ParserNeutralV43Tests(unittest.TestCase):
         self.assertEqual(sum(v43.rank_payload_token_counts(raw).values()), 0)
 
     def test_padding_split_can_recover_bank_tail(self):
+        # Four valid 225-byte records consume 900 bytes in the first range.
+        # A following 200-byte range moves wholly to the next bank.  Splitting
+        # the second range lets its first 100-byte record use the tail.
         entries = [
-            RangeEntry(0, 100, 0, 0, 0),
+            RangeEntry(0, 100, 0, 3, 0),
             RangeEntry(1, 200, 0, 1, 0),
         ]
-        records = [DummyRecord(0, 100), DummyRecord(1, 200), DummyRecord(1, 201)]
+        records = [
+            DummyRecord(0, 100), DummyRecord(0, 101),
+            DummyRecord(0, 102), DummyRecord(0, 103),
+            DummyRecord(1, 200), DummyRecord(1, 201),
+        ]
         packed = {
-            100: bytes(899),  # record byte + payload = 900
-            200: bytes(99),   # 100
-            201: bytes(99),   # 100
+            100: bytes(224), 101: bytes(224),
+            102: bytes(224), 103: bytes(224),
+            200: bytes(99), 201: bytes(99),
         }
         initial = v43._initial_segments(entries, records)
         self.assertEqual(v43._layout_size(initial, packed), 1224)
         split = [initial[0], (1, (200,)), (1, (201,))]
-        # 200 can now use 100 bytes of the 124-byte tail.  Only 24 bytes are
-        # wasted before 201 starts in the next bank: 1224 -> 1124.
         self.assertEqual(v43._layout_size(split, packed), 1124)
         data, out_entries, padding = v43.pack_segments(split, packed)
         self.assertEqual(len(data), 1124)
         self.assertEqual(padding, 24)
         self.assertEqual(
             [(entry.start_id, entry.id_span) for entry in out_entries],
-            [(100, 0), (200, 0), (201, 0)],
+            [(100, 3), (200, 0), (201, 0)],
         )
 
     def test_jan_ette_regression_range_is_pinned(self):
