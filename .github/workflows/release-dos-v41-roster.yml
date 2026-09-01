@@ -1,0 +1,88 @@
+name: Release DOS v0.41 roster record fix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/build_dos_v41_roster_record.py"
+      - "tests/test_build_dos_v41_roster_record.py"
+      - ".github/workflows/release-dos-v41-roster.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run v41 static tests
+        run: python -m unittest tests.test_build_dos_v41_roster_record -v
+      - name: Download exact published v0.39 base
+        run: |
+          mkdir -p outputs/v39_release
+          curl -L --fail --retry 3 \
+            -o outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.39/Wizardry7_Korean_0.39_overlay_safe_resident.zip
+          echo "27daa79c4f812d098ed98ae5ba8d7b089525211f7f0efaf5fa92cfd2cb3acc49  outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip" | sha256sum -c -
+          unzip -q outputs/Wizardry7_Korean_0.39_overlay_safe_resident.zip -d outputs/v39_release
+      - name: Build v0.41 package
+        run: |
+          python tools/build_dos_v41_roster_record.py \
+            --v39-dir outputs/v39_release \
+            --output-dir outputs/v41_roster \
+            --zip-output outputs/Wizardry7_Korean_0.41_roster_record_fix.zip
+          unzip -t outputs/Wizardry7_Korean_0.41_roster_record_fix.zip
+          sha256sum outputs/Wizardry7_Korean_0.41_roster_record_fix.zip | tee outputs/V41_SHA256.txt
+      - name: Publish v0.41
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > outputs/V41_RELEASE_NOTES.md <<'EOF'
+          ## 위저드리 7 DOS 한글화 0.41
+
+          0.40에서 해결되지 않았던 **캐릭터 추가 목록의 성별/직업 깨짐**을 실제 원인 지점에서 수정했습니다.
+
+          ### 실제 원인
+
+          목록 한 줄은 20바이트 고정 레코드입니다. 기존 코드가 한글 `남성/여성` 메시지에서 첫 **1바이트만** 복사한 뒤 `-`와 직업명의 첫 3바이트를 붙이고 있었습니다.
+
+          한글 한 글자는 `0x17 + pair + pair` 3바이트이므로 실제 레코드는 다음처럼 깨진 스트림이 되었습니다.
+
+          `0x17 '-' 0x17 pair pair ...`
+
+          그래서 문자열 렌더러가 성별의 남은 2바이트로 `-`와 직업명의 `0x17`을 먹어 버렸고, 이후 직업까지 연쇄적으로 깨졌습니다. 0.40은 단일문자 렌더러를 수정했기 때문에 이 경로에는 영향을 주지 못했습니다.
+
+          ### 0.41 수정
+
+          - 목록 전용 성별 소스를 기존 ASCII 테이블 메시지 455/456으로 변경
+          - 성별은 목록에서 `M/F` 한 글자로 안전하게 표시
+          - 직업은 기존 3바이트 한글 첫 글자가 정상 경계에서 시작해 `전`, `마`, `사`, `도` 등으로 표시
+          - 번역 메시지 140/141(`남성/여성`) 자체는 건드리지 않아 캐릭터 생성 성별 선택 화면은 그대로 한글 유지
+          - VBASE.OVR 3바이트 + VPCMK.OVR 3바이트만 변경
+          - 0.40의 효과 없던 resident_char 실험은 포함하지 않고, 검증된 0.39를 직접 기준으로 빌드
+
+          ### 설치
+
+          기존 게임 폴더를 백업한 뒤 ZIP 안의 `DSAVANT` 폴더를 GOG 위저드리 7 설치 폴더에 덮어씁니다.
+          EOF
+
+          if gh release view v0.41 >/dev/null 2>&1; then
+            gh release edit v0.41 \
+              --title "위저드리 7 DOS 한글화 0.41" \
+              --notes-file outputs/V41_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA"
+            gh release upload v0.41 \
+              outputs/Wizardry7_Korean_0.41_roster_record_fix.zip \
+              --clobber
+          else
+            gh release create v0.41 \
+              outputs/Wizardry7_Korean_0.41_roster_record_fix.zip \
+              --title "위저드리 7 DOS 한글화 0.41" \
+              --notes-file outputs/V41_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA"
+          fi
