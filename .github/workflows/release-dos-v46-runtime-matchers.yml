@@ -1,0 +1,173 @@
+name: Release DOS v0.46 runtime matcher restore
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "data/dos_runtime_matchers.json"
+      - "tools/build_dos_v46_runtime_matchers.py"
+      - "tests/test_build_dos_v46_runtime_matchers.py"
+      - "docs/V46_RUNTIME_MATCHER_RESTORE.md"
+      - ".github/workflows/release-dos-v46-runtime-matchers.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run v0.46 static tests
+        run: python -m unittest tests.test_build_dos_v46_runtime_matchers -v
+
+      - name: Download exact published v0.45 base
+        run: |
+          mkdir -p outputs/v45_release
+          curl -L --fail --retry 3 \
+            -o outputs/Wizardry7_Korean_0.45_scenario_safe.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.45/Wizardry7_Korean_0.45_scenario_safe.zip
+          echo "c619cb206ab03c27e4d163881ef7425f98b6dc3ccf1ad20b35c7fd45a9b72ab9  outputs/Wizardry7_Korean_0.45_scenario_safe.zip" | sha256sum -c -
+          unzip -q outputs/Wizardry7_Korean_0.45_scenario_safe.zip -d outputs/v45_release
+
+      - name: Build v0.46 package
+        run: |
+          python tools/build_dos_v46_runtime_matchers.py \
+            --v45-dir outputs/v45_release \
+            --manifest data/dos_runtime_matchers.json \
+            --output-dir outputs/v46_runtime_matchers \
+            --zip-output outputs/Wizardry7_Korean_0.46_runtime_matchers.zip \
+            | tee outputs/V46_BUILD_LOG.txt
+          unzip -t outputs/Wizardry7_Korean_0.46_runtime_matchers.zip
+          sha256sum outputs/Wizardry7_Korean_0.46_runtime_matchers.zip | tee outputs/V46_SHA256.txt
+
+      - name: Verify matcher restoration and non-matcher byte identity
+        run: |
+          python - <<'PY'
+          import base64
+          import json
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "tools")
+          from build_dos_v46_runtime_matchers import load_manifest
+          from extract_gold_messages import extract_messages, parse_header
+
+          base = Path("outputs/v45_release/DSAVANT")
+          new = Path("outputs/v46_runtime_matchers/DSAVANT")
+          report = json.loads(
+              Path("outputs/v46_runtime_matchers/UI_V46_REPORT.json").read_text(encoding="utf-8")
+          )
+          matchers, manifest_meta = load_manifest(Path("data/dos_runtime_matchers.json"))
+
+          assert manifest_meta["record_count"] == 186
+          assert report["matcher_restore"]["manifest_record_count"] == 186
+          assert report["matcher_restore"]["decoded_non_matcher_changes"] == 0
+          assert report["matcher_restore"]["changed_matcher_count"] > 0
+          assert report["matcher_restore"]["new_city_gate"]["message_id"] == 15180
+          assert report["matcher_restore"]["new_city_gate"]["source_display"] == "<0x02>PALUKE/<0x02>ARMORY/"
+          assert report["matcher_restore"]["padded_data_size"] == 262144
+
+          assert (new / "MISC.HDR").read_bytes() == (base / "MISC.HDR").read_bytes()
+          assert (new / "SCENARIO.DBS").read_bytes() == (base / "SCENARIO.DBS").read_bytes()
+          assert (new / "VBFONT0.VGA").read_bytes() == (base / "VBFONT0.VGA").read_bytes()
+
+          misc = (base / "MISC.HDR").read_bytes()
+          def decode(root: Path):
+              hdr = (root / "MSG.HDR").read_bytes()
+              data = (root / "MSG.DBS").read_bytes()
+              _, entries, _ = parse_header(hdr, "dos")
+              return {
+                  record.message_id: (
+                      record.source_display,
+                      base64.b64decode(record.raw_base64),
+                  )
+                  for record in extract_messages(data, entries, misc)
+              }
+
+          before = decode(base)
+          after = decode(new)
+          assert set(before) == set(after)
+          for message_id, (display, raw) in after.items():
+              if message_id in matchers:
+                  assert display == matchers[message_id], (message_id, display, matchers[message_id])
+              else:
+                  assert raw == before[message_id][1], message_id
+
+          assert after[15180][0] == "<0x02>PALUKE/<0x02>ARMORY/"
+          print(json.dumps(report["matcher_restore"], ensure_ascii=False, indent=2))
+          PY
+
+      - name: Upload v0.46 verification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wizardry7-Korean-v0.46-verification
+          path: |
+            outputs/Wizardry7_Korean_0.46_runtime_matchers.zip
+            outputs/V46_SHA256.txt
+            outputs/V46_BUILD_LOG.txt
+            outputs/v46_runtime_matchers/UI_V46_REPORT.json
+
+      - name: Publish v0.46 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > outputs/V46_RELEASE_NOTES.md <<'EOF'
+          ## 위저드리 7 DOS 한글화 0.46
+
+          **NPC 질문과 퍼즐의 입력 판정 문자열이 번역되어 정답을 입력해도 진행되지 않던 문제를 수정했습니다.**
+
+          대표적으로 뉴 시티 입구 경비병 질문은 화면 대사가 아니라 내부 판정 데이터에서
+          `PALUKE / ARMORY`를 검사합니다. 0.45에서는 이 숨은 판정 문자열까지
+          `팔루크 / 갑옷점`으로 번역되어 `PALUKE'S ARMORY` 같은 정상 답을 입력해도
+          통과할 수 없었습니다.
+
+          ### 0.46 변경
+
+          - 원본 DOS 데이터에서 런타임 입력 판정용 레코드 186개를 별도 manifest로 확정
+          - 뉴 시티 입구 `15180`: `PALUKE / ARMORY` 원본 판정 복구
+          - `HI/HELLO/HAIL`, `YES/SURE/OK`, `BLACK MARKET` 등 NPC 대화 키워드 복구
+          - 각 지역의 YES/NO 응답, 암호, 퍼즐 답안, NPC/지역명 판정 문자열 복구
+          - 화면에 실제로 표시되는 한국어 대사와 일반 메시지는 그대로 유지
+          - 0.45의 아이템/몬스터 한글화와 자네트 이벤트 수정 유지
+          - `MISC.HDR`, `SCENARIO.DBS`, `VBFONT0.VGA`는 0.45와 바이트 단위로 동일
+
+          ### 검증
+
+          빌드 시 0.45와 0.46의 전체 메시지를 다시 디코드하여 다음을 자동 검사합니다.
+
+          - manifest 186개 레코드가 원본 ASCII 판정 문자열과 정확히 일치
+          - manifest 밖의 메시지 디코드 바이트 변경 0개
+          - `MSG.DBS` 256 KiB 제한 유지
+          - 뉴 시티 입구 15180이 정확히 `<0x02>PALUKE/<0x02>ARMORY/`인지 별도 검사
+
+          ### 설치
+
+          기존 게임 폴더를 백업한 뒤 ZIP 안의 `DSAVANT` 폴더를 기존 설치 폴더에
+          덮어쓰십시오. 이번 수정은 메시지 판정 테이블 수정이므로 일반적으로 새 게임을
+          시작할 필요는 없습니다. 이미 특정 이벤트 상태가 저장된 경우에는 해당 조우 전
+          저장 파일에서 다시 시도하는 편이 안전합니다.
+          EOF
+
+          if gh release view v0.46 >/dev/null 2>&1; then
+            gh release edit v0.46 \
+              --title "위저드리 7 DOS 한글화 0.46" \
+              --notes-file outputs/V46_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --latest
+            gh release upload v0.46 \
+              outputs/Wizardry7_Korean_0.46_runtime_matchers.zip \
+              --clobber
+          else
+            gh release create v0.46 \
+              outputs/Wizardry7_Korean_0.46_runtime_matchers.zip \
+              --title "위저드리 7 DOS 한글화 0.46" \
+              --notes-file outputs/V46_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --latest
+          fi
