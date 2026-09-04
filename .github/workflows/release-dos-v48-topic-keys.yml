@@ -1,0 +1,204 @@
+name: Release DOS v0.48 NPC topic-key restore
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/build_dos_v48_topic_keys.py"
+      - "tests/test_build_dos_v48_topic_keys.py"
+      - "data/dos_topic_key_records.json"
+      - "data/dos_parser_core_records.json"
+      - "data/dos_runtime_matchers.json"
+      - "docs/V48_NPC_TOPIC_KEYS.md"
+      - ".github/workflows/release-dos-v48-topic-keys.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run v0.48 static tests
+        run: python -m unittest tests.test_build_dos_v48_topic_keys -v
+
+      - name: Download exact published v0.47 base
+        run: |
+          mkdir -p outputs/v47_release
+          curl -L --fail --retry 3 \
+            -o outputs/Wizardry7_Korean_0.47_parser_core.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.47/Wizardry7_Korean_0.47_parser_core.zip
+          echo "2ddc66df9b813bd46b2781b451adf699d393dff09c9a7bf09b2e1fb8b058cd9c  outputs/Wizardry7_Korean_0.47_parser_core.zip" | sha256sum -c -
+          unzip -q outputs/Wizardry7_Korean_0.47_parser_core.zip -d outputs/v47_release
+
+      - name: Build v0.48 package
+        run: |
+          python tools/build_dos_v48_topic_keys.py \
+            --v47-dir outputs/v47_release \
+            --runtime-manifest data/dos_runtime_matchers.json \
+            --core-manifest data/dos_parser_core_records.json \
+            --topic-manifest data/dos_topic_key_records.json \
+            --output-dir outputs/v48_topic_keys \
+            --zip-output outputs/Wizardry7_Korean_0.48_topic_keys.zip \
+            | tee outputs/V48_BUILD_LOG.txt
+          unzip -t outputs/Wizardry7_Korean_0.48_topic_keys.zip
+          sha256sum outputs/Wizardry7_Korean_0.48_topic_keys.zip | tee outputs/V48_SHA256.txt
+
+      - name: Verify topic lookup and RUMORS regression
+        run: |
+          python - <<'PY'
+          import base64
+          import json
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "tools")
+          import build_dos_v48_topic_keys as v48
+          from extract_gold_messages import extract_messages, parse_header
+
+          base = Path("outputs/v47_release/DSAVANT")
+          new = Path("outputs/v48_topic_keys/DSAVANT")
+          report = json.loads(
+              Path("outputs/v48_topic_keys/UI_V48_REPORT.json").read_text(encoding="utf-8")
+          )
+          combined, metadata, previous_ids, topic_ids = v48.load_all_logic_records(
+              Path("data/dos_runtime_matchers.json"),
+              Path("data/dos_parser_core_records.json"),
+              Path("data/dos_topic_key_records.json"),
+          )
+          restored = report["topic_restore"]
+          assert len(previous_ids) == 250
+          assert len(topic_ids) == 620
+          assert len(combined) == 870
+          assert metadata["combined_record_count"] == 870
+          assert restored["topic_key_count"] == 620
+          assert restored["newly_restored_topic_keys"] == 613
+          assert restored["already_original_topic_keys"] == 7
+          assert restored["previous_logic_preserved"] == 250
+          assert restored["combined_protected_logic_count"] == 870
+          assert restored["decoded_non_protected_changes"] == 0
+          assert restored["padded_data_size"] == 262144
+          assert restored["paluke_rumors_pipeline"]["synonym_message_id"] == 7177
+          assert restored["paluke_rumors_pipeline"]["paluke_topic_message_id"] == 9220
+          assert restored["paluke_rumors_pipeline"]["response_message_id"] == 9221
+
+          for filename in ("MISC.HDR", "SCENARIO.DBS", "VBFONT0.VGA", "VMNPC.OVR"):
+              assert (new / filename).read_bytes() == (base / filename).read_bytes(), filename
+
+          misc = (base / "MISC.HDR").read_bytes()
+          def decode(root: Path):
+              hdr = (root / "MSG.HDR").read_bytes()
+              data = (root / "MSG.DBS").read_bytes()
+              _, entries, _ = parse_header(hdr, "dos")
+              return {
+                  record.message_id: (
+                      record.source_display,
+                      base64.b64decode(record.raw_base64),
+                  )
+                  for record in extract_messages(data, entries, misc)
+              }
+
+          before = decode(base)
+          after = decode(new)
+          assert set(before) == set(after)
+          for message_id, (display, raw) in after.items():
+              if message_id in combined:
+                  assert display == combined[message_id], (message_id, display, combined[message_id])
+              else:
+                  assert raw == before[message_id][1], message_id
+
+          assert after[7177][0] == "WHAT TELL YOU/RUMOR/RUMORS/NEWS/INFO/HINT/HINTS/"
+          assert after[9220][0] == " PRISONER%"
+          assert after[9221][1] == before[9221][1]
+          assert after[9210][0] == '"ARMOR%'
+          assert after[9040][0] == "<0x1F>BLACK MARKET%"
+          assert after[8310][0] == '"LORE@'
+          assert after[15180][0] == "<0x02>PALUKE/<0x02>ARMORY/"
+          assert len((new / "MSG.HDR").read_bytes()) == len((base / "MSG.HDR").read_bytes())
+          assert len((new / "MSG.DBS").read_bytes()) == 262144
+          print(json.dumps(restored, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Upload v0.48 verification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wizardry7-Korean-v0.48-verification
+          path: |
+            outputs/Wizardry7_Korean_0.48_topic_keys.zip
+            outputs/V48_SHA256.txt
+            outputs/V48_BUILD_LOG.txt
+            outputs/v48_topic_keys/UI_V48_REPORT.json
+
+      - name: Publish v0.48 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > outputs/V48_RELEASE_NOTES.md <<'EOF'
+          ## 위저드리 7 DOS 한글화 0.48
+
+          **0.47에서 `BYE` 같은 기본 대화 문법은 복구됐지만, `RUMORS`를 입력하면 NPC가 여전히 알아듣지 못하던 문제를 수정했습니다.**
+
+          ### 원인
+
+          DOS판 `VMNPC.OVR`에는 입력 문법 외에도 별도의 **NPC 지식/화제(topic) 조회 테이블**이 있습니다. 이 테이블은 메시지를 5개 단위로 묶으며 첫 번째 레코드를 검색 키로 사용합니다.
+
+          팔루크의 경우:
+
+          - `9210 = ARMOR`
+          - `9215 = WAR`
+          - `9220 = PRISONER`
+          - `9221` = 붙잡힌 고른 장교에 관한 실제 표시 대사
+
+          0.47에서는 `7177 = WHAT TELL YOU/RUMOR/RUMORS/NEWS/INFO/HINT/HINTS/`가 정상이라 `RUMORS` 자체는 인식됐습니다. 하지만 다음 단계에서 참조하는 `9220 = PRISONER` 같은 화제 키가 한국어로 번역돼 있어 NPC 지식 조회가 실패하고 일반적인 "뭐라고?" 응답으로 빠졌습니다.
+
+          ### 0.48 변경
+
+          - 전역 및 NPC별 화제 조회 키 **620개를 원본 DOS 문자열로 복구**
+          - 이 중 613개는 0.47에서 번역돼 있던 키를 실제로 복구
+          - 7개는 이미 원본 상태였으며 그대로 유지
+          - 0.47의 문법/동의어/입력 판정 로직 250개도 계속 원문 보존
+          - 총 **870개 런타임 로직 레코드**를 번역 금지 대상으로 고정
+          - `ARMOR`, `WAR`, `PRISONER`, `BLACK MARKET`, `LORE`, `NEW CITY` 및 NPC/지역/세력명 기반 화제 조회를 함께 복구
+          - 표시용 답변은 계속 한국어 유지
+            - 예: `9220 = PRISONER`는 영어 키로 복구하지만 `9221`의 팔루크 답변은 한국어 그대로 유지
+          - 기존 `PALUKE / ARMORY`, `BYE`, 아이템/몬스터 한글화, 자네트 이벤트 수정 유지
+
+          ### 검증
+
+          - 보호 로직 870개가 원본 DOS 디코드 문자열과 정확히 일치
+          - 보호 대상 밖 메시지의 디코드 바이트 변경 0개
+          - `7177` RUMORS 동의어 테이블 및 `9220 = PRISONER` 팔루크 화제 키 별도 회귀 검사
+          - `9221` 표시 답변은 0.47과 바이트 단위 동일
+          - `VMNPC.OVR`, `MISC.HDR`, `SCENARIO.DBS`, `VBFONT0.VGA`는 0.47과 바이트 단위 동일
+          - `MSG.DBS` 256 KiB 제한 유지
+
+          ### 테스트
+
+          기존 게임에 ZIP 안의 `DSAVANT` 폴더를 덮어쓴 뒤 게임을 완전히 종료했다가 다시 실행해 주세요. 새 게임은 필요하지 않습니다.
+
+          팔루크에게 `RUMORS`를 입력했을 때 더 이상 "뭐라고?"로 빠지지 않고 붙잡힌 고른 장교에 대한 소문을 말하는지 확인해 주세요. `BYE`와 뉴 시티 입구 `PALUKE` / `ARMORY`도 그대로 동작해야 합니다.
+          EOF
+
+          if gh release view v0.48 >/dev/null 2>&1; then
+            gh release edit v0.48 \
+              --title "위저드리 7 DOS 한글화 0.48" \
+              --notes-file outputs/V48_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --latest
+            gh release upload v0.48 \
+              outputs/Wizardry7_Korean_0.48_topic_keys.zip \
+              --clobber
+          else
+            gh release create v0.48 \
+              outputs/Wizardry7_Korean_0.48_topic_keys.zip \
+              --title "위저드리 7 DOS 한글화 0.48" \
+              --notes-file outputs/V48_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --latest
+          fi
