@@ -1,0 +1,207 @@
+name: Release DOS v0.47 full NPC parser core
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/build_dos_v47_parser_core.py"
+      - "tests/test_build_dos_v47_parser_core.py"
+      - "data/dos_parser_core_records.json"
+      - "data/dos_runtime_matchers.json"
+      - "docs/V47_NPC_PARSER_CORE.md"
+      - ".github/workflows/release-dos-v47-parser-core.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run v0.47 static tests
+        run: python -m unittest tests.test_build_dos_v47_parser_core -v
+
+      - name: Download exact published v0.46 base
+        run: |
+          mkdir -p outputs/v46_release
+          curl -L --fail --retry 3 \
+            -o outputs/Wizardry7_Korean_0.46_runtime_matchers.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.46/Wizardry7_Korean_0.46_runtime_matchers.zip
+          echo "6eab1afa94d25c332fb652bcc2d631d7b3018bae440c8c554204bd786f816698  outputs/Wizardry7_Korean_0.46_runtime_matchers.zip" | sha256sum -c -
+          unzip -q outputs/Wizardry7_Korean_0.46_runtime_matchers.zip -d outputs/v46_release
+
+      - name: Build v0.47 package
+        run: |
+          python tools/build_dos_v47_parser_core.py \
+            --v46-dir outputs/v46_release \
+            --runtime-manifest data/dos_runtime_matchers.json \
+            --core-manifest data/dos_parser_core_records.json \
+            --output-dir outputs/v47_parser_core \
+            --zip-output outputs/Wizardry7_Korean_0.47_parser_core.zip \
+            | tee outputs/V47_BUILD_LOG.txt
+          unzip -t outputs/Wizardry7_Korean_0.47_parser_core.zip
+          sha256sum outputs/Wizardry7_Korean_0.47_parser_core.zip | tee outputs/V47_SHA256.txt
+
+      - name: Verify full parser logic and BYE regression
+        run: |
+          python - <<'PY'
+          import base64
+          import json
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "tools")
+          import build_dos_v46_runtime_matchers as v46
+          import build_dos_v47_parser_core as v47
+          from extract_gold_messages import extract_messages, parse_header
+
+          base = Path("outputs/v46_release/DSAVANT")
+          new = Path("outputs/v47_parser_core/DSAVANT")
+          report = json.loads(
+              Path("outputs/v47_parser_core/UI_V47_REPORT.json").read_text(encoding="utf-8")
+          )
+          combined, metadata = v47.load_combined_logic_records(
+              Path("data/dos_runtime_matchers.json"),
+              Path("data/dos_parser_core_records.json"),
+          )
+          runtime, _ = v46.load_manifest(Path("data/dos_runtime_matchers.json"))
+          core, _ = v47.load_core_manifest(Path("data/dos_parser_core_records.json"))
+
+          restored = report["parser_restore"]
+          assert metadata["combined_record_count"] == 250
+          assert len(runtime) == 186
+          assert len(core) == 64
+          assert restored["manifest_record_count"] == 250
+          assert restored["changed_matcher_count"] == 64
+          assert restored["already_original_matcher_count"] == 186
+          assert restored["decoded_non_matcher_changes"] == 0
+          assert set(restored["changed_matcher_ids"]) == set(core)
+          assert set(restored["already_original_matcher_ids"]) == set(runtime)
+          assert report["regression"]["typed_input"] == "BYE"
+          assert report["regression"]["normalized_token"] == "BYE"
+          assert report["regression"]["canonical_token"] == "BYE"
+          assert report["regression"]["linked"] is True
+
+          for filename in ("MISC.HDR", "SCENARIO.DBS", "VBFONT0.VGA", "VMNPC.OVR"):
+              assert (new / filename).read_bytes() == (base / filename).read_bytes(), filename
+
+          misc = (base / "MISC.HDR").read_bytes()
+          def decode(root: Path):
+              hdr = (root / "MSG.HDR").read_bytes()
+              data = (root / "MSG.DBS").read_bytes()
+              _, entries, _ = parse_header(hdr, "dos")
+              return {
+                  record.message_id: (
+                      record.source_display,
+                      base64.b64decode(record.raw_base64),
+                  )
+                  for record in extract_messages(data, entries, misc)
+              }
+
+          before = decode(base)
+          after = decode(new)
+          assert set(before) == set(after)
+          for message_id, (display, raw) in after.items():
+              if message_id in combined:
+                  assert display == combined[message_id], (message_id, display, combined[message_id])
+              else:
+                  assert raw == before[message_id][1], message_id
+
+          assert after[7000][1] == b"TELL"
+          assert after[7120][1] == b"HI"
+          assert after[7121][1] == b"BYE"
+          assert after[7122][1] == b"YES"
+          assert after[7123][1] == b"NO"
+          assert after[7160][1] == b"HI/HELLO/HAIL/"
+          assert after[7161][1] == b"BYE/GOODBYE/QUIT/FAREWELL/"
+          assert after[15180][1] == b"\x02PALUKE/\x02ARMORY/"
+          assert len((new / "MSG.HDR").read_bytes()) == len((base / "MSG.HDR").read_bytes())
+          assert len((new / "MSG.DBS").read_bytes()) == 262144
+          print(json.dumps(report["regression"], ensure_ascii=False, indent=2))
+          print(json.dumps(restored, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Upload v0.47 verification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wizardry7-Korean-v0.47-verification
+          path: |
+            outputs/Wizardry7_Korean_0.47_parser_core.zip
+            outputs/V47_SHA256.txt
+            outputs/V47_BUILD_LOG.txt
+            outputs/v47_parser_core/UI_V47_REPORT.json
+
+      - name: Publish v0.47 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > outputs/V47_RELEASE_NOTES.md <<'EOF'
+          ## 위저드리 7 DOS 한글화 0.47
+
+          **0.46에서 `PALUKE / ARMORY` 같은 입력 판정어를 복구했지만, NPC 대화에서 `BYE`가 여전히 인식되지 않던 문제를 추가로 수정했습니다.**
+
+          ### 원인
+
+          DOS판 `VMNPC.OVR`의 대화 파서는 입력어를 두 단계로 처리합니다.
+
+          1. `7160..7197`의 동의어 테이블에서 `GOODBYE`, `QUIT`, `FAREWELL` 등을 대표 단어 `BYE`로 정규화
+          2. `7000..7146`에 있는 별도의 **기준 문법/대표 단어 테이블**과 비교하여 의미를 판정
+
+          0.46은 1번의 슬래시(`/`) 구분 입력 판정 테이블은 복구했지만, 슬래시가 없는 2번 내부 문법 테이블을 놓쳤습니다. 따라서 `7161`은 정상적으로 `BYE`를 만들었는데도, 기준 레코드 `7121`이 한국어 바이트로 남아 있어 서로 일치하지 않았습니다.
+
+          ### 0.47 변경
+
+          - `VMNPC.OVR`가 고정으로 읽는 내부 문법 테이블 64개를 원본 ASCII로 복구
+            - `7000..7009`
+            - `7030..7036`
+            - `7040..7041`
+            - `7050..7056`
+            - `7070..7079`
+            - `7090..7100`
+            - `7120..7129`
+            - `7140..7146`
+          - 0.46의 입력 판정 레코드 186개와 합쳐 **총 250개 런타임 로직 문자열을 원문 보존 대상으로 고정**
+          - `7121 = BYE`와 `7161 = BYE/GOODBYE/QUIT/FAREWELL/`의 연결을 자동 회귀 테스트
+          - `HI`, `YES`, `NO`, `THANK`, `HELP` 등 주요 기본 대화 토큰도 동일 방식으로 검증
+          - 뉴 시티 `PALUKE / ARMORY` 수정 및 0.45의 아이템/몬스터 한글화, 자네트 이벤트 수정 유지
+          - 화면에 표시되는 일반 대사/설명문은 계속 한국어 유지
+
+          ### 검증
+
+          - 0.46 기준 새로 변경된 레코드: 정확히 64개
+          - 0.46에서 이미 복구한 186개 입력 판정 레코드: 그대로 원문 유지
+          - 총 보호 로직 레코드: 250개
+          - 보호 대상 밖의 디코드 메시지 변경: 0개
+          - `VMNPC.OVR`, `MISC.HDR`, `SCENARIO.DBS`, `VBFONT0.VGA`: 0.46과 바이트 단위 동일
+          - `MSG.DBS`: 256 KiB 제한 유지
+
+          ### 테스트
+
+          기존 게임에 ZIP의 `DSAVANT` 폴더를 덮어쓴 뒤 게임을 완전히 종료했다가 다시 실행해 주세요. 새 게임을 시작할 필요는 없습니다.
+
+          NPC와 대화하여 `BYE` 또는 `GOODBYE`를 입력했을 때 정상적으로 대화가 종료되는지 확인해 주세요. 뉴 시티 입구에서는 `PALUKE` 또는 `ARMORY` 통과도 그대로 유지되어야 합니다.
+          EOF
+
+          if gh release view v0.47 >/dev/null 2>&1; then
+            gh release edit v0.47 \
+              --title "위저드리 7 DOS 한글화 0.47" \
+              --notes-file outputs/V47_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --latest
+            gh release upload v0.47 \
+              outputs/Wizardry7_Korean_0.47_parser_core.zip \
+              --clobber
+          else
+            gh release create v0.47 \
+              outputs/Wizardry7_Korean_0.47_parser_core.zip \
+              --title "위저드리 7 DOS 한글화 0.47" \
+              --notes-file outputs/V47_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --latest
+          fi
