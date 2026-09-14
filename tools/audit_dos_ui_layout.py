@@ -34,7 +34,11 @@ def disassembly_context(data: bytes, offset: int, origin: int) -> list[str]:
 
 def near_call_target(data: bytes, offset: int, origin: int) -> int:
     displacement = int.from_bytes(data[offset + 1 : offset + 3], "little", signed=True)
-    return origin + offset + 3 + displacement
+    # 16-bit near CALL arithmetic wraps at the code-segment boundary.  Without
+    # this mask, calls in the upper half of a large overlay appear to target
+    # 0x14AD7 instead of the real resident strlen at 0x4AD7, hiding exactly the
+    # late-overlay UI sites we need to audit.
+    return (origin + offset + 3 + displacement) & 0xFFFF
 
 
 def classify_strlen_site(data: bytes, offset: int) -> str:
