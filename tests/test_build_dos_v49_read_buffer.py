@@ -35,6 +35,24 @@ class ReadBufferV49Tests(unittest.TestCase):
         self.assertEqual(v49.EXPECTED_FIRST_OLD_OVERFLOW, 21606)
         self.assertEqual(v49.EXPECTED_BOOK_MAX_ID, 21633)
 
+    def test_upper_overlay_near_call_target_wraps_to_resident_strlen(self):
+        for offset in (*v49.VARIABLE_CENTER_SITES, *v49.HALF_WIDTH_SITES, v49.LOGICAL_SITE_MUST_REMAIN):
+            raw = bytearray(offset + 3)
+            raw[offset : offset + 3] = v49.near_call(
+                v49.STRLEN_TARGET, v49.OVERLAY_ORIGIN + offset
+            )
+            self.assertEqual(v49.call_target(raw, offset), v49.STRLEN_TARGET)
+
+    def test_choice_centering_patch_scope_is_explicit(self):
+        self.assertEqual(v49.VARIABLE_CENTER_SITES, (0x8356, 0x8603))
+        self.assertEqual(v49.HALF_WIDTH_SITES, (0x84FB, 0x8C46))
+        self.assertEqual(v49.LOGICAL_SITE_MUST_REMAIN, 0x764D)
+        self.assertEqual(v49.WIDTH_ADAPTER, 0x38F4)
+        self.assertEqual(
+            v49.V49_VTREA_SHA256,
+            "23cb96744b68998fddb1c8bf5b1fa61f9eca18f492f58318f324861b0217570a",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
