@@ -34,7 +34,7 @@ def disassembly_context(data: bytes, offset: int, origin: int) -> list[str]:
 
 def near_call_target(data: bytes, offset: int, origin: int) -> int:
     displacement = int.from_bytes(data[offset + 1 : offset + 3], "little", signed=True)
-    return origin + offset + 3 + displacement
+    return (origin + offset + 3 + displacement) & 0xFFFF
 
 
 def classify_strlen_site(data: bytes, offset: int) -> str:
