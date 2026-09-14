@@ -1,0 +1,71 @@
+name: Diagnose DOS v0.49 book SCENARIO paths
+
+on:
+  push:
+    branches:
+      - fix/v049-ui-book-crash
+    paths:
+      - ".github/workflows/diagnose-v49-book-scenario.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compare-scenario:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download published v0.44 and v0.48 packages
+        run: |
+          mkdir -p outputs/v44 outputs/v48
+          curl -L --fail --retry 3 -o outputs/v44.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.44/Wizardry7_Korean_0.44_event_state_fix.zip
+          curl -L --fail --retry 3 -o outputs/v48.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.48/Wizardry7_Korean_0.48_topic_keys.zip
+          echo "9e1b27e2ebc617a0b4400d656b548fa4d7cd65d9f1df23852ad8b82df1702c1d  outputs/v44.zip" | sha256sum -c -
+          echo "a0990467c94e1c19bd4ad7432b4895b026accd1056bb983e3110d621ae5e3ba8  outputs/v48.zip" | sha256sum -c -
+          unzip -q outputs/v44.zip -d outputs/v44
+          unzip -q outputs/v48.zip -d outputs/v48
+
+      - name: Compare SCENARIO byte changes
+        run: |
+          python - <<'PY' | tee outputs/scenario_diff_report.txt
+          from pathlib import Path
+          import hashlib
+
+          a = (Path("outputs/v44/DSAVANT/SCENARIO.DBS")).read_bytes()
+          b = (Path("outputs/v48/DSAVANT/SCENARIO.DBS")).read_bytes()
+          print("v44", len(a), hashlib.sha256(a).hexdigest())
+          print("v48", len(b), hashlib.sha256(b).hexdigest())
+          assert len(a) == len(b)
+          diffs = [i for i,(x,y) in enumerate(zip(a,b)) if x != y]
+          print("changed bytes", len(diffs))
+          runs=[]
+          if diffs:
+            s=p=diffs[0]
+            for i in diffs[1:]:
+              if i != p+1:
+                runs.append((s,p+1))
+                s=i
+              p=i
+            runs.append((s,p+1))
+          print("diff runs", len(runs))
+          for s,e in runs[:2500]:
+            lo=max(0,s-8); hi=min(len(a),e+8)
+            print(f"0x{s:05X}-0x{e-1:05X} len={e-s:2d}  orig={a[lo:hi].hex(' ')}  patched={b[lo:hi].hex(' ')}")
+          PY
+
+      - name: Upload original and patched runtime files
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wizardry7-v049-book-scenario-diagnostic
+          path: |
+            outputs/scenario_diff_report.txt
+            outputs/v44/DSAVANT/SCENARIO.DBS
+            outputs/v48/DSAVANT/SCENARIO.DBS
+            outputs/v48/DSAVANT/VPCVW.OVR
+            outputs/v48/DSAVANT/VTREA.OVR
+            outputs/v48/DSAVANT/VBASE.OVR
+            outputs/v48/DSAVANT/DS.EXE
+          if-no-files-found: error
