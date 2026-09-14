@@ -1,0 +1,177 @@
+name: Release DOS v0.49 readable-text buffer fix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/build_dos_v49_read_buffer.py"
+      - "tests/test_build_dos_v49_read_buffer.py"
+      - "docs/V49_READ_BUFFER.md"
+      - ".github/workflows/release-dos-v49-read-buffer.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run v0.49 static tests
+        run: python -m unittest tests.test_build_dos_v49_read_buffer -v
+
+      - name: Download exact published v0.48 base
+        run: |
+          mkdir -p outputs/v48_release
+          curl -L --fail --retry 3 \
+            -o outputs/Wizardry7_Korean_0.48_topic_keys.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.48/Wizardry7_Korean_0.48_topic_keys.zip
+          echo "a0990467c94e1c19bd4ad7432b4895b026accd1056bb983e3110d621ae5e3ba8  outputs/Wizardry7_Korean_0.48_topic_keys.zip" | sha256sum -c -
+          unzip -q outputs/Wizardry7_Korean_0.48_topic_keys.zip -d outputs/v48_release
+
+      - name: Build v0.49 package
+        run: |
+          python tools/build_dos_v49_read_buffer.py \
+            --v48-dir outputs/v48_release \
+            --output-dir outputs/v49_read_buffer \
+            --zip-output outputs/Wizardry7_Korean_0.49_read_buffer.zip \
+            | tee outputs/V49_BUILD_LOG.txt
+          unzip -t outputs/Wizardry7_Korean_0.49_read_buffer.zip
+          sha256sum outputs/Wizardry7_Korean_0.49_read_buffer.zip | tee outputs/V49_SHA256.txt
+
+      - name: Verify Book of Fables overflow regression
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "tools")
+          import build_dos_v49_read_buffer as v49
+
+          base = Path("outputs/v48_release/DSAVANT")
+          new = Path("outputs/v49_read_buffer/DSAVANT")
+          report = json.loads(
+              Path("outputs/v49_read_buffer/UI_V49_REPORT.json").read_text(encoding="utf-8")
+          )
+          audit = report["read_buffer_audit"]
+          patch = report["patch"]
+
+          assert audit["book_message_range"] == [21600, 21655]
+          assert audit["old_buffer_bytes"] == 86
+          assert audit["old_safe_decoded_bytes"] == 84
+          assert audit["first_old_overflow_id"] == 21606
+          assert audit["book_max_message_id"] == 21633
+          assert audit["book_max_decoded_bytes"] == 111
+          assert audit["new_buffer_bytes"] == 127
+          assert audit["new_safe_decoded_bytes"] == 125
+          assert audit["new_overflow_count_entire_message_bank"] == 0
+          assert audit["corpus_max_decoded_bytes"] == 122
+          assert patch["changed_byte_offsets"] == ["0x3C7C", "0x3CA7", "0x3CBB"]
+          assert patch["changed_byte_count"] == 3
+          assert patch["source_sha256"] == v49.V48_VPCVW_SHA256
+          assert patch["output_sha256"] == v49.V49_VPCVW_SHA256
+
+          before = (base / "VPCVW.OVR").read_bytes()
+          after = (new / "VPCVW.OVR").read_bytes()
+          differences = [i for i, (a, b) in enumerate(zip(before, after)) if a != b]
+          assert differences == [0x3C7C, 0x3CA7, 0x3CBB]
+          assert len(before) == len(after) == 39820
+          assert after[0x3C7B:0x3C7E] == bytes.fromhex("B8 81 FF")
+          assert after[0x3CA5:0x3CA8] == bytes.fromhex("8D 46 81")
+          assert after[0x3CB9:0x3CBC] == bytes.fromhex("8D 46 81")
+
+          lengths = v49.decoded_lengths(new)
+          assert lengths[21606] == 92
+          assert lengths[21633] == 111
+          assert max(lengths.values()) == 122
+          assert max(lengths.values()) + v49.DECODER_TERMINATOR_BYTES <= v49.NEW_BUFFER_BYTES
+
+          for path in base.iterdir():
+              if not path.is_file() or path.name in {"VPCVW.OVR", "korean_codebook.json"}:
+                  continue
+              assert (new / path.name).read_bytes() == path.read_bytes(), path.name
+
+          assert (new / "MSG.DBS").read_bytes() == (base / "MSG.DBS").read_bytes()
+          assert (new / "MSG.HDR").read_bytes() == (base / "MSG.HDR").read_bytes()
+          assert (new / "MISC.HDR").read_bytes() == (base / "MISC.HDR").read_bytes()
+          assert (new / "SCENARIO.DBS").read_bytes() == (base / "SCENARIO.DBS").read_bytes()
+          print(json.dumps(audit, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Upload v0.49 verification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wizardry7-Korean-v0.49-verification
+          path: |
+            outputs/Wizardry7_Korean_0.49_read_buffer.zip
+            outputs/V49_SHA256.txt
+            outputs/V49_BUILD_LOG.txt
+            outputs/v49_read_buffer/UI_V49_REPORT.json
+
+      - name: Publish v0.49 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > outputs/V49_RELEASE_NOTES.md <<'EOF'
+          ## 위저드리 7 DOS 한글화 0.49
+
+          **뉴 시티 도서관의 `책 우화`(Book of Fables / The Witch's Tale)를 읽다가 DOS 게임이 튕기는 문제를 수정했습니다.**
+
+          ### 원인
+
+          인벤토리의 `읽기(READ)` 기능은 `VPCVW.OVR`에서 메시지 한 줄을 고정 **86바이트 스택 버퍼**에 디코드합니다. 원문 영어는 이 크기에 들어가지만, 한글은 한 글자를 `ESC + rank + rank` 3바이트로 저장하기 때문에 일부 번역 줄이 86바이트를 넘어갔습니다.
+
+          메시지 디코더가 문자열 뒤에 2바이트 종료값도 기록하므로 실제 안전한 본문 크기는 84바이트뿐입니다.
+
+          `책 우화`에서는:
+
+          - `21606`이 92바이트로 첫 오버플로 발생
+          - `21633`은 111바이트로 가장 큼
+          - 이 때문에 책을 몇 줄 넘겨 읽다가 스택을 덮어쓰고 게임이 종료될 수 있음
+
+          ### 0.49 변경
+
+          - `VPCVW.OVR` 읽기용 스택 버퍼를 **86 -> 127바이트**로 확대
+          - 버퍼 주소를 `BP-0x56 -> BP-0x7F`로 이동
+          - 변경된 실제 바이트는 `VPCVW.OVR`의 **3바이트뿐**
+          - 책 번역은 줄이거나 영어로 되돌리지 않고 그대로 유지
+          - `MSG.DBS`, `MSG.HDR`, `MISC.HDR`, `SCENARIO.DBS`, 폰트와 NPC/퍼즐 판정 수정은 그대로 유지
+
+          ### 검증
+
+          - 현재 전체 11,019개 메시지 중 가장 긴 디코드 문자열: 122바이트
+          - 새 버퍼의 안전 본문 용량: 125바이트(127 - 종료값 2)
+          - 새 용량을 넘는 메시지: 0개
+          - `21606 = 92바이트`, `21633 = 111바이트` 회귀 검사
+          - v0.48 대비 `VPCVW.OVR` 외 게임 데이터 변경 없음
+
+          ### 테스트
+
+          기존 게임 폴더에 ZIP의 `DSAVANT` 폴더를 덮어쓴 뒤 완전히 종료 후 다시 실행해 주세요. **새 게임은 필요 없습니다.**
+
+          제보에 사용된 세이브에서 첫 캐릭터가 가진 `책 우화`를 `읽기`로 끝까지 넘겨 보고, 마지막 `끝`까지 정상적으로 도달하는지 확인해 주세요.
+          EOF
+
+          if gh release view v0.49 >/dev/null 2>&1; then
+            gh release edit v0.49 \
+              --title "위저드리 7 DOS 한글화 0.49" \
+              --notes-file outputs/V49_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --latest
+            gh release upload v0.49 \
+              outputs/Wizardry7_Korean_0.49_read_buffer.zip \
+              --clobber
+          else
+            gh release create v0.49 \
+              outputs/Wizardry7_Korean_0.49_read_buffer.zip \
+              --title "위저드리 7 DOS 한글화 0.49" \
+              --notes-file outputs/V49_RELEASE_NOTES.md \
+              --target "$GITHUB_SHA" \
+              --latest
+          fi
