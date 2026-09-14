@@ -83,4 +83,13 @@ jobs:
             outputs/v49_ui_site_disassembly.log
             outputs/v49_book_diagnostic.json
             outputs/v49_book_diagnostic.log
+            outputs/v48/DSAVANT/DS.EXE
+            outputs/v48/DSAVANT/VBASE.OVR
+            outputs/v48/DSAVANT/VMAZE.OVR
+            outputs/v48/DSAVANT/VPOPS.OVR
+            outputs/v48/DSAVANT/VTREA.OVR
+            outputs/v48/DSAVANT/VMNPC.OVR
+            outputs/v48/DSAVANT/MSG.HDR
+            outputs/v48/DSAVANT/MSG.DBS
+            outputs/v48/DSAVANT/MISC.HDR
           if-no-files-found: error
