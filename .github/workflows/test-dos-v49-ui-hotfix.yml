@@ -1,0 +1,75 @@
+name: Test DOS v0.49 UI hotfix
+
+on:
+  push:
+    branches:
+      - fix/v049-ui-book-crash
+    paths:
+      - ".github/workflows/test-dos-v49-ui-hotfix.yml"
+      - "tools/build_dos_v49_ui_hotfix.py"
+      - "tests/test_build_dos_v49_ui_hotfix.py"
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tests
+        run: python -m pip install pytest
+
+      - name: Run unit regression tests
+        run: python -m pytest -q tests/test_build_dos_v49_ui_hotfix.py
+
+      - name: Download exact published v0.48 package
+        run: |
+          mkdir -p outputs/v48
+          curl -L --fail --retry 3 \
+            -o outputs/Wizardry7_Korean_0.48_topic_keys.zip \
+            https://github.com/munument1/-KR-Wizardry7/releases/download/v0.48/Wizardry7_Korean_0.48_topic_keys.zip
+          echo "a0990467c94e1c19bd4ad7432b4895b026accd1056bb983e3110d621ae5e3ba8  outputs/Wizardry7_Korean_0.48_topic_keys.zip" | sha256sum -c -
+          unzip -q outputs/Wizardry7_Korean_0.48_topic_keys.zip -d outputs/v48
+
+      - name: Build targeted test package
+        run: |
+          python tools/build_dos_v49_ui_hotfix.py \
+            --v48-dir outputs/v48 \
+            --output-dir outputs/v49 \
+            --zip-output outputs/Wizardry7_Korean_0.49_ui_hotfix_test.zip \
+            | tee outputs/v49_build_report.log
+
+      - name: Verify exact VTREA patch and preservation
+        run: |
+          echo "23cb96744b68998fddb1c8bf5b1fa61f9eca18f492f58318f324861b0217570a  outputs/v49/DSAVANT/VTREA.OVR" | sha256sum -c -
+          echo "54fa02f1e91b3086f2f8283fcbed07d21da8a86285be72c08806f23833b2d112  outputs/v49/DSAVANT/DS.EXE" | sha256sum -c -
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+
+          before = Path("outputs/v48/DSAVANT")
+          after = Path("outputs/v49/DSAVANT")
+          changed = []
+          for src in sorted(p for p in before.iterdir() if p.is_file()):
+              dst = after / src.name
+              if hashlib.sha256(src.read_bytes()).digest() != hashlib.sha256(dst.read_bytes()).digest():
+                  changed.append(src.name)
+          assert changed == ["VTREA.OVR"], changed
+          print("changed game files:", changed)
+          PY
+
+      - name: Upload test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wizardry7-Korean-v049-ui-hotfix-test
+          path: |
+            outputs/Wizardry7_Korean_0.49_ui_hotfix_test.zip
+            outputs/v49_build_report.log
+            outputs/v49/UI_V49_REPORT.json
+          if-no-files-found: error
