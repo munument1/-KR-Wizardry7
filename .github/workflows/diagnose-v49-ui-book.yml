@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/diagnose-v49-ui-book.yml"
       - "tools/audit_dos_ui_layout.py"
+      - "tools/diagnose_dos_v49_ui_sites.py"
       - "tools/diagnose_dos_v49_book.py"
 
 permissions:
@@ -40,6 +41,12 @@ jobs:
             --json-output outputs/v49_ui_layout_audit.json \
             | tee outputs/v49_ui_layout_audit.log
 
+      - name: Disassemble gameplay UI candidates
+        run: |
+          python tools/diagnose_dos_v49_ui_sites.py outputs/v48/DSAVANT \
+            --output outputs/v49_ui_site_disassembly.txt \
+            | tee outputs/v49_ui_site_disassembly.log
+
       - name: Print gameplay-overlay candidates
         run: |
           python - <<'PY'
@@ -59,15 +66,11 @@ jobs:
               print("six-pixel patterns:", report.get("six_pixel_patterns", []))
           PY
 
-      - name: Run message/book structural diagnostics when available
+      - name: Run message/book structural diagnostics
         run: |
-          if [ -f tools/diagnose_dos_v49_book.py ]; then
-            python tools/diagnose_dos_v49_book.py outputs/v48/DSAVANT \
-              --output outputs/v49_book_diagnostic.json \
-              | tee outputs/v49_book_diagnostic.log
-          else
-            echo "book diagnostic script not added yet"
-          fi
+          python tools/diagnose_dos_v49_book.py outputs/v48/DSAVANT \
+            --output outputs/v49_book_diagnostic.json \
+            | tee outputs/v49_book_diagnostic.log
 
       - name: Upload diagnostics
         uses: actions/upload-artifact@v4
@@ -76,6 +79,8 @@ jobs:
           path: |
             outputs/v49_ui_layout_audit.json
             outputs/v49_ui_layout_audit.log
+            outputs/v49_ui_site_disassembly.txt
+            outputs/v49_ui_site_disassembly.log
             outputs/v49_book_diagnostic.json
             outputs/v49_book_diagnostic.log
-          if-no-files-found: ignore
+          if-no-files-found: error
