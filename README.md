@@ -1,27 +1,31 @@
 # 위저드리 7 DOS 한글화 패치
 
 **Wizardry VII: Crusaders of the Dark Savant** GOG DOS판을 위한 한글화
-패치입니다. 현재 배포 버전은 **0.45**입니다.
+패치입니다. 현재 배포 버전은 **0.49**입니다.
 
 > 이 패치는 **GOG에 포함된 DOS판**용입니다. Wizardry 7 Gold에는 적용하지
 > 마십시오.
 
 ## 다운로드
 
-### [위저드리 7 DOS 한글화 0.45 받기](https://github.com/munument1/-KR-Wizardry7/releases/download/v0.45/Wizardry7_Korean_0.45_scenario_safe.zip)
+### [위저드리 7 DOS 한글화 0.49 받기](https://github.com/munument1/-KR-Wizardry7/releases/download/v0.49/Wizardry7_Korean_0.49.zip)
 
-- [릴리스 설명 보기](https://github.com/munument1/-KR-Wizardry7/releases/tag/v0.45)
-- 파일명: `Wizardry7_Korean_0.45_scenario_safe.zip`
-- SHA-256: `C619CB206AB03C27E4D163881EF7425F98B6DC3CCF1AD20B35C7FD45A9B72AB9`
+- [릴리스 설명 보기](https://github.com/munument1/-KR-Wizardry7/releases/tag/v0.49)
+- 파일명: `Wizardry7_Korean_0.49.zip`
+- SHA-256: `6B70E59056D687BD34415EDE0FC3D1DD0D7A030672836CAF9FA63A216CD4DE5B`
 
 ## 설치 방법
 
-1. 위 ZIP 파일을 내려받습니다.
+1. 게임과 DOSBox를 완전히 종료한 뒤 위 ZIP 파일을 내려받습니다.
 2. 기존 위저드리 7 설치 폴더를 통째로 백업합니다.
 3. ZIP을 풉니다.
 4. 압축 안의 `DSAVANT` 폴더를 GOG 위저드리 7 설치 폴더에 복사합니다.
 5. 같은 이름의 파일을 모두 **덮어쓰기** 합니다.
-6. GOG 바로가기 또는 기존 DOSBox 실행 파일로 게임을 시작합니다.
+6. GOG 바로가기 또는 기존 DOSBox 실행 파일로 게임을 다시 시작합니다.
+
+이전 패치에서 업데이트할 때도 ZIP 안의 `DSAVANT` 파일을 **모두 덮어쓰기**
+하십시오. 0.49에는 이전 버전의 수정이 포함되어 있어 순서대로 설치할 필요가
+없습니다. 일반적으로 새 게임 없이 기존 저장 파일을 이어서 사용할 수 있습니다.
 
 일반적인 설치 구조는 다음과 같습니다.
 
@@ -47,7 +51,21 @@ Wizardry 7\
 
 DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상입니다.
 
-## 0.45 주요 수정
+## 0.49 주요 수정
+
+- 뉴시티에서 `책 우화`(Book of Fables / The Witch's Tale)를 읽다가 종료되던 문제 수정
+- 잠긴 문, 상자/도둑 메뉴 등의 한글 선택지가 버튼 왼쪽으로 밀리던 중앙정렬 문제 수정
+- 아래 0.46~0.48의 입력 판정 및 NPC 대화 수정 포함
+
+## 0.46~0.48에서 유지되는 수정
+
+- 뉴시티 입구의 `PALUKE / ARMORY` 입력 판정 복구
+- 무기점의 `BLACK MARKET` 및 각 지역의 암호·퍼즐 답안 판정 복구
+- `HI`, `BYE`, `YES`, `NO`, `RUMORS` 등 NPC 대화 입력 처리 복구
+- 팔루크의 포로 소문을 포함한 NPC 대화 주제 검색 복구
+- 내부 판정용 문자열은 원본 영어로 유지하고, 화면에 표시되는 한국어 대사는 보존
+
+## 0.45에서 유지되는 수정
 
 - `SCENARIO.DBS` 아이템 이름 **568개** 한글화
 - 몬스터 이름 **1,000개 슬롯** 한글화
@@ -108,15 +126,26 @@ DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상�
 
 ### 아이템/몬스터 이름에 `?`가 보이는 경우
 
-- 패치 버전이 0.45인지 확인합니다.
-- `SCENARIO.DBS`와 `VBFONT0.VGA`가 0.45 ZIP의 파일로 실제 덮어써졌는지 확인합니다.
+- 패치 버전이 0.49인지 확인합니다.
+- `SCENARIO.DBS`와 `VBFONT0.VGA`가 0.49 ZIP의 파일로 실제 덮어써졌는지 확인합니다.
 
 ### 초반 필드에서 다른 NPC/그림이 나오는 경우
 
-- 패치 버전이 0.45인지 확인합니다.
-- 특히 `VBASE.OVR`가 0.45 ZIP의 파일로 실제 덮어써졌는지 확인합니다.
+- 패치 버전이 0.49인지 확인합니다.
+- 특히 `VBASE.OVR`가 0.49 ZIP의 파일로 실제 덮어써졌는지 확인합니다.
 - 가능하면 새 게임으로 같은 지점을 재현하고 스크린샷과 직전 행동을 함께
   제보해 주십시오.
+
+### `PALUKE`나 `BLACK MARKET`을 입력해도 거절당하는 경우
+
+- 위 다운로드 링크의 `Wizardry7_Korean_0.49.zip`을 사용했는지 확인합니다.
+- 게임과 DOSBox를 완전히 종료하고 ZIP 안의 `DSAVANT` 파일을 모두 덮어쓴 뒤
+  다시 실행합니다. 특히 `MSG.HDR`, `MSG.DBS`, `MISC.HDR`가 같은 ZIP의 파일이어야 합니다.
+- 암호와 NPC 질문은 영어로 입력합니다. 한글로 번역된 화면 대사와 내부 입력
+  판정값은 별개입니다.
+- 이미 실패한 이벤트 상태가 저장되었다면 해당 조우 전 저장 파일에서 다시 시도합니다.
+- 계속 발생하면 실패 직전 저장 파일, 사용한 ZIP 파일명, 입력한 문구와 화면을
+  함께 제보해 주십시오.
 
 ### 원래 상태로 되돌리고 싶은 경우
 
@@ -134,6 +163,10 @@ DOSBox 안에서는 `C:\DSAVANT\SAVEGAME.DBS`로 표시될 수 있으며 정상�
 
 ## 개발 자료
 
+- [`docs/V49_READ_BUFFER.md`](docs/V49_READ_BUFFER.md)
+- [`docs/V48_NPC_TOPIC_KEYS.md`](docs/V48_NPC_TOPIC_KEYS.md)
+- [`docs/V47_NPC_PARSER_CORE.md`](docs/V47_NPC_PARSER_CORE.md)
+- [`docs/V46_RUNTIME_MATCHER_RESTORE.md`](docs/V46_RUNTIME_MATCHER_RESTORE.md)
 - [`docs/V45_SCENARIO_SAFE_ENCODING.md`](docs/V45_SCENARIO_SAFE_ENCODING.md)
 - [`docs/V44_JAN_ETTE_EVENT_ROOT_CAUSE.md`](docs/V44_JAN_ETTE_EVENT_ROOT_CAUSE.md)
 - [`docs/WEBGPT_HANDOFF_2026-08-31.md`](docs/WEBGPT_HANDOFF_2026-08-31.md)
